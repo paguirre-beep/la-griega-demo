@@ -29,23 +29,9 @@
   --f-display:'Fraunces','Cooper Black','Cooper Std',Georgia,serif;
   --f-body:'Manrope',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
   --r-lg:18px; --r:13px; --r-sm:9px;
+  color-scheme:light;
 }
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --bg:#170F0B; --surface:#211612; --surface-2:#2B1D17; --surface-3:#37261E;
-  --line:#3A2820; --line-2:#4C352A;
-  --ink:#F8ECE3; --ink-2:#D0B7A8; --ink-3:#9D8275;
-  --brand:#F94901; --primary:#FF6024; --primary-hover:#FF7A45; --on-primary:#1A0800;
-  --sage:#FF7A3A; --sage-2:#7D3519; --sage-soft:#3B1D10; --sage-ink:#FFB48C;
-  --terra:#E9A07A; --terra-soft:#3A2419; --terra-ink:#F3C2A5;
-  --good:#7CC48E; --good-soft:#1C3122;
-  --warn:#E5B05A; --warn-soft:#382A12;
-  --bad:#F28A80; --bad-soft:#3F1D1A;
-  --info:#8DB8D6; --info-soft:#1B2A36;
-  --yog:#FBF1E6; --glass:#3A2A22; --glass-line:#5A4134;
-  --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 28px -16px rgba(0,0,0,.55);
-  color-scheme:dark;
-}}
-:root[data-theme="dark"]{
+:root.dark{
   --bg:#170F0B; --surface:#211612; --surface-2:#2B1D17; --surface-3:#37261E;
   --line:#3A2820; --line-2:#4C352A;
   --ink:#F8ECE3; --ink-2:#D0B7A8; --ink-3:#9D8275;
@@ -2922,8 +2908,8 @@ function openMore() {
 }
 
 /* ---------- Tema ---------- */
-function isDark() { const t = document.documentElement.dataset.theme; return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; }
-function toggleTheme() { const t = isDark() ? 'light' : 'dark'; document.documentElement.dataset.theme = t; try { localStorage.setItem('lg-theme', t); } catch (e) { } render(); }
+function isDark() { return document.documentElement.classList.contains('dark'); }
+function toggleTheme() { const t = isDark() ? 'light' : 'dark'; document.documentElement.classList.toggle('dark', t === 'dark'); try { localStorage.setItem('lg-theme', t); } catch (e) { } render(); }
 
 /* ---------- Armado de pantalla ---------- */
 const brandHtml = (compact) => S.config.brand.trim().toLowerCase() === 'la griega'
@@ -3131,7 +3117,7 @@ window.addEventListener('hashchange', () => { const v = location.hash.slice(1); 
 
 /* ---------- Arranque ---------- */
 (function boot() {
-  try { const t = localStorage.getItem('lg-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) { }
+  try { document.documentElement.classList.toggle('dark', localStorage.getItem('lg-theme') === 'dark'); } catch (e) { }
   const saved = loadState();
   if (saved && (saved.config.fixedDate || saved.demoDate === realToday())) { S = saved; rebalance(); }
   else seed(saved && saved.config.fixedDate ? saved.config.fixedDate : realToday(), saved ? saved.config : null);
