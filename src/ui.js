@@ -151,9 +151,6 @@ function stackBar(list) {
 }
 
 /* ---------- Componentes ---------- */
-const kpi = (o) => `<div class="card kpi ${o.go ? 'click' : ''}" ${o.go ? `data-act="go" data-arg="${o.go}"` : ''}>
-  <div class="k-top"><span class="k-ico ${o.tone || ''}">${ic(o.icon)}</span><span class="k-label">${o.label}</span></div>
-  <div class="k-val ${o.small ? 'sm' : ''}">${o.value}</div><div class="k-sub">${o.sub || ''}</div></div>`;
 const pageHead = (title, sub, actions) => `<div class="page-head"><div><h1>${title}</h1>${sub ? `<p>${sub}</p>` : ''}</div>${actions ? `<div class="head-actions">${actions}</div>` : ''}</div>`;
 const seg = (act, cur, opts) => `<div class="seg" role="tablist">${opts.map(([v, l]) => `<button role="tab" aria-selected="${v === cur}" class="${v === cur ? 'on' : ''}" data-act="${act}" data-arg="${v}">${l}</button>`).join('')}</div>`;
 const emptyBox = t => `<div class="empty">${t}</div>`;
@@ -162,7 +159,7 @@ const emptyBox = t => `<div class="empty">${t}</div>`;
    VISTAS
    ===================================================================== */
 const NAV = [
-  ['inicio', 'Inicio', 'home'], ['pedidos', 'Pedidos', 'orders'], ['produccion', 'Producción', 'pot'], ['envios', 'Envíos', 'truck'],
+  ['bienvenida', 'Primeros pasos', 'spark'], ['inicio', 'Inicio', 'home'], ['pedidos', 'Pedidos', 'orders'], ['produccion', 'Producción', 'pot'], ['envios', 'Envíos', 'truck'],
   ['inventario', 'Inventario', 'boxes'], ['ventas', 'Ventas', 'chart'], ['cobrar', 'Cobrar', 'wallet'], ['clientes', 'Clientes', 'users'], ['estrategia', 'Estrategia', 'target'],
 ];
 function navBadges() {
@@ -173,7 +170,9 @@ function navBadges() {
   const lowIns = S.insumos.filter(i => i.stock < i.min).length;
   const expiring = S.lots.filter(l => l.qty > 0 && (lotState(l) === 'proximo' || lotState(l) === 'vencido')).length;
   const owed = S.orders.filter(o => balanceOf(o) > 0 && (o.status === 'entregado' || o.deliveryDate < D)).length;
+  const ob = typeof onbDone === 'function' ? onbDone() : 4;
   return {
+    bienvenida: ob < 4 ? `<span class="badge terra">${ob}/4</span>` : '',
     pedidos: open.length ? `<span class="badge">${open.length}</span>` : '',
     produccion: plan ? `<span class="badge terra">${plan}</span>` : '',
     envios: toReq ? `<span class="badge terra">${toReq}</span>` : '',
@@ -252,70 +251,6 @@ Contenido: ${itemsText(o)}
 Envío a cargo del ${o.shipPaidBy === 'negocio' ? 'negocio' : 'cliente'}${bal > 0 ? '\nCobrar al entregar: ' + money(bal) + (o.payMethod === 'efectivo' ? ' en efectivo' : ' (transferencia)') : '\nYa está pagado'}
 Frascos de vidrio: viajan refrigerados y derechos.`;
 }
-function vEnvios() {
-  const D = TODAY();
-  const date = U.env.date === 'hoy' ? D : U.env.date === 'manana' ? addDays(D, 1) : U.env.date;
-  const all = S.orders.filter(o => !o.cancelled && o.ship && o.deliveryDate === date).sort((a, b) => a.slot.localeCompare(b.slot) || a.number - b.number);
-  const pend = all.filter(o => o.ship.status === 'pendiente');
-  const k = {
-    total: all.length, req: pend.filter(o => o.status === 'listo').length, notReady: pend.filter(o => o.status !== 'listo').length,
-    asg: all.filter(o => o.ship.status === 'solicitado').length, way: all.filter(o => o.ship.status === 'en_camino').length,
-    done: all.filter(o => o.ship.status === 'entregado').length, inc: all.filter(o => o.ship.incident).length,
-  };
-  const active = all.filter(o => o.ship.status !== 'entregado'), done = all.filter(o => o.ship.status === 'entregado');
-  return `<div class="wrap">
-  ${pageHead('Envíos', 'Seguimiento de cada salida. El Uber se pide afuera del sistema y acá registrás conductor, retiro y entrega.', `<button class="btn" data-act="copy-route">${ic('route')}Copiar hoja de ruta</button>`)}
-  <div class="toolbar">${seg('env-date', U.env.date === 'hoy' || U.env.date === 'manana' ? U.env.date : 'otro', [['hoy', 'Hoy'], ['manana', 'Mañana']])}
-    <input type="date" class="input" id="env-day" style="width:auto;height:40px" value="${date}" data-change="env-day" aria-label="Elegir día"><span class="muted">${fmtLong(date)}</span></div>
-  <div class="grid g-kpi6">
-    ${kpi({ icon: 'truck', label: 'Programados', value: k.total, sub: 'envíos del día' })}
-    ${kpi({ icon: 'car', label: 'Pendientes de solicitar', value: k.req, sub: k.notReady ? k.notReady + ' todavía en preparación' : 'Listos para pedir Uber', tone: 'terra' })}
-    ${kpi({ icon: 'users', label: 'Conductor asignado', value: k.asg, sub: 'esperando retiro', tone: 'info' })}
-    ${kpi({ icon: 'route', label: 'En camino', value: k.way, sub: 'retirados del local', tone: 'warn' })}
-    ${kpi({ icon: 'check', label: 'Entregados', value: k.done, sub: k.total ? pctTxt(k.done / k.total) + ' del día' : '—' })}
-    ${kpi({ icon: 'alert', label: 'Incidencias', value: k.inc, sub: k.inc ? 'requieren atención' : 'Sin problemas', tone: 'bad' })}
-  </div>
-  <div class="sec-title" style="margin:6px 0 -4px"><h2>Hoja de ruta</h2><span class="muted">${active.length} por salir · ordenados por horario</span></div>
-  ${active.map(shipCard).join('') || emptyBox('No quedan envíos pendientes para este día.')}
-  ${done.length ? `<button class="btn ghost" data-act="env-done" style="align-self:flex-start">${U.env.showDone ? 'Ocultar' : 'Ver'} ${done.length} ${done.length === 1 ? 'entregado' : 'entregados'}</button>${U.env.showDone ? done.map(shipCard).join('') : ''}` : ''}
-  <div class="card flat tight" style="display:flex;gap:10px;align-items:flex-start;background:var(--surface-2)">${ic('info')}<p class="muted" style="margin:0;font-size:13px">Pedir un Uber no marca el pedido como entregado. El producto, el transporte y el cobro tienen estados separados. Esta versión no está conectada a Uber: el seguimiento es manual. La estructura ya separa los datos del viaje (conductor, referencia, horarios) para evaluar una integración si existe una API oficial con permisos.</p></div>
-  </div>`;
-}
-function shipCard(o) {
-  const c = clientById(o.clientId), a = orderAddr(o), s = o.ship, bal = balanceOf(o);
-  const maps = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(a.address + ', ' + a.barrio + ', CABA');
-  let acts = `<button class="btn sm" data-act="copy-ship" data-arg="${o.id}">${ic('copy', 'sm')}Copiar datos</button><a class="btn sm" href="${maps}" target="_blank" rel="noopener">${ic('pin', 'sm')}Abrir Maps</a>`;
-  if (s.status === 'pendiente') {
-    if (o.delivery === 'uber') acts += `<a class="btn sm" href="https://m.uber.com/looking" target="_blank" rel="noopener" data-act="uber" data-arg="${o.id}">${ic('external', 'sm')}Pedir Uber</a>`;
-    acts += `<button class="btn sm primary" data-act="ship-assign" data-arg="${o.id}" ${o.status !== 'listo' ? 'disabled title="El pedido todavía no está listo"' : ''}>${ic('car', 'sm')}Registrar conductor</button>`;
-  } else if (s.status === 'solicitado') acts += `<button class="btn sm" data-act="ship-assign" data-arg="${o.id}">${ic('edit', 'sm')}Editar viaje</button><button class="btn sm primary" data-act="ship-pickup" data-arg="${o.id}">${ic('truck', 'sm')}Conductor retiró</button>`;
-  else if (s.status === 'en_camino') acts += `<button class="btn sm primary" data-act="ship-deliver" data-arg="${o.id}">${ic('check', 'sm')}Marcar entregado</button>`;
-  if (s.status !== 'entregado') acts += `<button class="btn sm ghost" data-act="ship-incident" data-arg="${o.id}">${ic('alert', 'sm')}Incidencia</button>`;
-  if (bal > 0) acts += `<button class="btn sm ghost" data-act="pay" data-arg="${o.id}">${ic('cash', 'sm')}Cobrar</button>`;
-  const prodLabel = o.status === 'listo' ? 'Listo' : STATUS[o.status];
-  return `<article class="ship ${s.status === 'entregado' ? 'done' : ''}">
-    <div class="ship-time"><b>${slotStart(o.slot)}</b><span>a ${o.slot.split('–')[1]}</span></div>
-    <div class="ship-body">
-      <div class="ship-head"><h3>${esc(c.name)} <span class="faint" style="font-weight:600;font-size:14px">#${o.number}</span></h3><button class="btn sm ghost" data-act="order" data-arg="${o.id}">Ver pedido ${ic('chev', 'sm')}</button></div>
-      ${s.incident ? `<div class="incident">${ic('alert', 'sm')}<span>${esc(s.incident.type)}${s.incident.note ? ': ' + esc(s.incident.note) : ''} · ${s.incident.time}</span><button class="btn sm" data-act="ship-resolve" data-arg="${o.id}">Resolver</button>${s.status !== 'entregado' ? `<button class="btn sm" data-act="ship-retry" data-arg="${o.id}">Reprogramar</button>` : ''}</div>` : ''}
-      <div class="ship-states">
-        <div class="state"><small>Producto</small>${statusChip(o).replace(STATUS.listo, prodLabel)}</div>
-        <div class="state"><small>Transporte</small>${shipChip(o)}</div>
-        <div class="state"><small>Cobro</small>${payChip(o)}</div>
-      </div>
-      <dl class="ship-grid">
-        <div><dt>Dirección</dt><dd>${esc(a.address)}<br><span class="faint">${esc(a.barrio)}</span></dd></div>
-        <div><dt>Referencia</dt><dd>${esc(a.ref) || '—'}</dd></div>
-        <div><dt>Teléfono</dt><dd class="num">${esc(c.phone) || '—'}</dd></div>
-        <div><dt>Productos</dt><dd>${esc(itemsText(o))}</dd></div>
-        <div><dt>Transporte</dt><dd>${DELIVERY[o.delivery]} · ${money(o.shipCost)}<br><span class="faint">a cargo del ${o.shipPaidBy === 'negocio' ? 'negocio' : 'cliente'}</span></dd></div>
-        <div><dt>Conductor</dt><dd>${s.driver ? esc(s.driver) + (s.tripRef ? ' · ' + esc(s.tripRef) : '') : '—'}${s.pickedAt ? `<br><span class="faint">Retiró ${s.pickedAt}${s.deliveredAt ? ' · entregó ' + s.deliveredAt : ''}</span>` : ''}</dd></div>
-      </dl>
-      ${o.notes ? `<div class="oc-note">${esc(o.notes)}</div>` : ''}
-      <div class="ship-actions">${acts}</div>
-    </div></article>`;
-}
-
 /* ---------- PRODUCCIÓN ---------- */
 function vProduccion() {
   const t = U.prod.tab;
@@ -337,25 +272,6 @@ function poCard(p) {
     ${p.status !== 'cancelada' ? stages : ''}
     ${acts ? `<div class="chips" style="justify-content:flex-end">${acts}</div>` : ''}
   </div>`;
-}
-function prodHoy() {
-  const plan = productionPlan();
-  const need = plan.filter(p => p.need > 0), ok = plan.filter(p => p.need === 0);
-  const active = S.prodOrders.filter(p => p.status === 'en_curso' || p.status === 'programada').sort((a, b) => a.date.localeCompare(b.date));
-  const doneToday = S.prodOrders.filter(p => p.status === 'finalizada' && p.date === TODAY());
-  const row = p => `<div class="plan"><span>${jar(p.sku.flavor, 40)}</span><div style="min-width:0"><div class="row-title">${esc(p.sku.name)}</div>
-    <div class="plan-nums"><span>Pedidos confirmados <b>${p.confirmed}</b></span><span>Ya reservado <b>${p.reserved}</b></span><span>Disponible sin reservar <b>${p.free}</b></span><span>Ya programado <b>${p.scheduled}</b></span><span>Stock mínimo <b>${p.sku.min}</b></span></div></div>
-    <div class="plan-act">${p.need > 0 ? `<div class="need num">${p.need}<small>${p.forOrders} para pedidos · ${p.forStock} para stock</small></div><button class="btn sm primary" data-act="po-new" data-arg="${p.sku.id}" data-qty="${p.need}" style="margin-top:8px">Crear orden</button>` : `<span class="chip good">${ic('check', 'sm')}${p.scheduled ? 'Cubierto con lo programado' : 'Cubierto'}</span>`}</div></div>`;
-  return `<div class="grid g-main">
-    <div class="card"><div class="sec-title"><div><h2>¿Qué tengo que producir hoy?</h2><p class="hint" style="margin:4px 0 0">Producir = faltante de pedidos − lo ya programado + lo que falta para tu stock mínimo. No duplica lo que ya está en curso.</p></div></div>
-      ${need.length ? need.map(row).join('') : emptyBox('Con el stock y lo programado alcanza para todos los pedidos.')}
-      ${ok.length ? `<details style="margin-top:8px"><summary class="muted" style="cursor:pointer;font-weight:700;font-size:13px;padding:8px 0">${ok.length} productos cubiertos</summary>${ok.map(row).join('')}</details>` : ''}
-    </div>
-    <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
-      <div class="sec-title" style="margin:0"><h2>Órdenes activas</h2></div>
-      ${active.map(poCard).join('') || emptyBox('No hay órdenes en curso.')}
-      ${doneToday.length ? `<div class="sec-title" style="margin:6px 0 0"><h2>Terminadas hoy</h2></div>${doneToday.map(poCard).join('')}` : ''}
-    </div></div>`;
 }
 function prodOrdenes() {
   const list = S.prodOrders.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id, undefined, { numeric: true }));
@@ -399,34 +315,7 @@ function prodRecetas() {
 }
 
 /* ---------- INVENTARIO ---------- */
-function vInventario() {
-  const t = U.inv.tab;
-  return `<div class="wrap">
-  ${pageHead('Inventario', 'Productos terminados por lote e insumos, con el historial de cada movimiento.', t === 'insumos' ? `<button class="btn primary" data-act="ins-buy">${ic('plus')}Registrar compra</button>` : '')}
-  ${seg('inv-tab', t, [['productos', 'Productos terminados'], ['insumos', 'Materias primas e insumos'], ['movimientos', 'Movimientos']])}
-  ${t === 'productos' ? invProductos() : t === 'insumos' ? invInsumos() : invMovs()}</div>`;
-}
 const lotChip = l => ({ ok: '<span class="chip good">Vigente</span>', proximo: '<span class="chip warn">Próximo a vencer</span>', vencido: '<span class="chip bad">Vencido</span>', agotado: '<span class="chip">Agotado</span>' }[lotState(l)]);
-function invProductos() {
-  const st = S.skus.map(s => ({ s, k: skuStock(s.id) }));
-  const tot = { free: sum(st, x => x.k.free), res: sum(st, x => x.k.reserved), soon: sum(st, x => x.k.soon), exp: sum(st, x => x.k.expired) };
-  return `<div class="grid g-kpi">
-    ${kpi({ icon: 'boxes', label: 'Disponible para vender', value: tot.free, sub: 'sin reservar y sin vencer' })}
-    ${kpi({ icon: 'orders', label: 'Reservado', value: tot.res, sub: 'asignado a pedidos abiertos', tone: 'info' })}
-    ${kpi({ icon: 'clock', label: 'Próximo a vencer', value: tot.soon, sub: '3 días o menos', tone: 'warn' })}
-    ${kpi({ icon: 'trash', label: 'Vencido', value: tot.exp, sub: 'no se puede entregar', tone: 'bad' })}
-  </div>
-  ${st.map(({ s, k }) => {
-    const lots = S.lots.filter(l => l.skuId === s.id && (l.qty > 0 || diffDays(TODAY(), l.made) <= 25)).sort((a, b) => a.expires.localeCompare(b.expires));
-    const low = k.free < s.min;
-    return `<div class="card"><div class="sku-head">${jar(s.flavor, 46)}<div><div class="row-title" style="font-size:16px">${esc(s.name)} ${low ? '<span class="chip terra">Stock bajo</span>' : ''}</div><div class="row-sub">Stock mínimo ${s.min} · vida útil ${s.shelf} días</div></div>
-      <div class="sku-nums"><div><b>${k.physical}</b><span>Físico</span></div><div><b>${k.reserved}</b><span>Reservado</span></div><div><b style="color:var(--${low ? 'terra' : 'ink'})">${k.free}</b><span>Disponible</span></div></div></div>
-      ${lots.length ? `<div class="tbl-wrap" style="margin-top:12px"><table class="lot-table resp"><thead><tr><th>Lote</th><th>Elaboración</th><th>Vencimiento</th><th class="r">Físico</th><th class="r">Reservado</th><th class="r">Disponible</th><th>Estado</th><th></th></tr></thead><tbody>
-      ${lots.map(l => { const res = l.expires >= TODAY() ? lotReserved(l) : 0; const free = l.expires >= TODAY() ? l.qty - res : 0; const canOff = l.qty > 0 && (l.expires < TODAY() ? l.qty : free) > 0; return `<tr><td data-l="Lote"><b>${esc(l.code)}</b></td><td data-l="Elaboración">${fmtDate(l.made)}</td><td data-l="Vence">${fmtDate(l.expires)} <span class="faint">(${l.expires < TODAY() ? 'hace ' + diffDays(TODAY(), l.expires) + ' d' : diffDays(l.expires, TODAY()) === 0 ? 'hoy' : 'en ' + diffDays(l.expires, TODAY()) + ' d'})</span></td><td class="r" data-l="Físico">${l.qty}</td><td class="r" data-l="Reservado">${res}</td><td class="r" data-l="Disponible"><b>${free}</b></td><td data-l="Estado">${lotChip(l)}</td><td class="r" data-l="">${canOff ? `<button class="btn sm ghost" data-act="lot-off" data-arg="${l.id}">Dar de baja</button>` : ''}</td></tr>`; }).join('')}
-      </tbody></table></div>` : emptyBox('Sin lotes. Creá una orden de producción.')}
-    </div>`;
-  }).join('')}`;
-}
 function invInsumos() {
   const value = sum(S.insumos, i => i.stock * i.cost);
   const low = S.insumos.filter(i => i.stock < i.min);
@@ -447,25 +336,6 @@ function invInsumos() {
       <div class="chips"><button class="btn sm" data-act="ins-buy" data-arg="${i.id}">Compra</button><button class="btn sm ghost" data-act="ins-waste" data-arg="${i.id}">Desperdicio</button><button class="btn sm ghost" data-act="ins-min" data-arg="${i.id}">Mínimo</button><button class="btn sm ghost icon" data-act="ins-hist" data-arg="${i.id}" aria-label="Historial">${ic('history', 'sm')}</button></div></div>`;
   }).join('')}</div></div>`).join('')}`;
 }
-function invMovs() {
-  const f = U.inv.mv;
-  let list = S.moves;
-  if (f === 'insumos') list = list.filter(m => m.kind === 'insumo');
-  else if (f === 'productos') list = list.filter(m => m.kind === 'producto');
-  else if (f !== 'todos') list = list.filter(m => m.insumoId === f || m.skuId === f);
-  const TY = { compra: ['good', 'Compra'], consumo: ['', 'Consumo'], desperdicio: ['bad', 'Desperdicio'], ajuste: ['info', 'Ajuste'], produccion: ['good', 'Producción'], salida: ['info', 'Salida'], baja: ['bad', 'Baja'] };
-  return `<div class="toolbar"><select class="input" style="width:auto" id="mv-f" data-change="mv-f" aria-label="Filtrar movimientos">
-    <option value="todos">Todos los movimientos</option><option value="insumos" ${f === 'insumos' ? 'selected' : ''}>Solo insumos</option><option value="productos" ${f === 'productos' ? 'selected' : ''}>Solo productos terminados</option>
-    <optgroup label="Insumo">${S.insumos.map(i => `<option value="${i.id}" ${f === i.id ? 'selected' : ''}>${esc(i.name)}</option>`).join('')}</optgroup>
-    <optgroup label="Producto">${S.skus.map(s => `<option value="${s.id}" ${f === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</optgroup></select><span class="muted">${list.length} movimientos</span></div>
-  <div class="card"><div class="rows">${list.slice(0, 120).map(m => {
-    const name = m.kind === 'insumo' ? insById(m.insumoId).name : skuById(m.skuId).name;
-    const unit = m.kind === 'insumo' ? insById(m.insumoId).unit : 'u';
-    const [tone, label] = TY[m.type] || ['', m.type];
-    return `<div class="row"><span class="time-tag" style="width:64px;font-size:12px">${fmtDate(m.date)}<br><span class="faint" style="font-weight:600">${m.time || ''}</span></span><div class="row-main"><div class="row-title">${esc(name)} <span class="chip ${tone}">${label}</span></div><div class="row-sub">${esc(m.note || '')}</div></div><div class="row-end"><b style="color:var(--${m.qty > 0 ? 'good' : m.qty < 0 ? 'ink' : 'ink-3'})">${m.qty > 0 ? '+' : ''}${m.qty ? fmtN(m.qty) + ' ' + unit : '—'}</b></div></div>`;
-  }).join('') || emptyBox('Sin movimientos.')}</div></div>`;
-}
-
 /* ---------- VENTAS ---------- */
 function periodRange(p) {
   const D = TODAY();
@@ -504,7 +374,7 @@ function vVentas() {
   const ch = {}; for (const r of cur) ch[r.o.channel] = (ch[r.o.channel] || 0) + r.total;
   const prodList = Object.keys(prod).map(k => ({ label: skuById(k).name, v: prod[k].v, sub: Math.round(prod[k].u) + ' u', icon: jar(skuById(k).flavor, 22) })).sort((a, b) => b.v - a.v);
   const flList = Object.keys(fl).map(k => ({ label: FLAVORS[k].name, v: fl[k].v })).sort((a, b) => b.v - a.v);
-  const szList = Object.keys(sz).map(k => ({ label: SIZES[k], v: sz[k].v, sub: Math.round(sz[k].u) + ' u' })).sort((a, b) => b.v - a.v);
+  const szList = Object.keys(sz).map(k => ({ label: sizeLabel(+k), v: sz[k].v, sub: Math.round(sz[k].u) + ' u' })).sort((a, b) => b.v - a.v);
   const chList = Object.keys(CHANNELS).filter(k => ch[k]).map(k => ({ label: CHANNELS[k], v: ch[k] })).sort((a, b) => b.v - a.v);
   const listRows = cur.slice().sort((a, b) => b.date.localeCompare(a.date) || b.o.number - a.o.number);
   const shown = U.ven.all ? listRows : listRows.slice(0, 15);
@@ -515,10 +385,10 @@ function vVentas() {
   ${U.ven.period === 'rango' ? `<div class="toolbar"><div class="field"><label for="ven-from">Desde</label><input type="date" class="input" id="ven-from" value="${U.ven.from}" max="${TODAY()}" data-change="ven-from"></div><div class="field"><label for="ven-to">Hasta</label><input type="date" class="input" id="ven-to" value="${U.ven.to}" max="${TODAY()}" data-change="ven-to"></div>${!(U.ven.from && U.ven.to) ? '<span class="hint" style="align-self:end;padding-bottom:12px">Elegí las dos fechas. Mientras tanto se muestra todo el historial.</span>' : ''}</div>` : ''}
   <div class="eyebrow">${esc(R.label)} · ${fmtDate(R.a)} al ${fmtDate(R.b)}</div>
   <div class="grid g-kpi">
-    ${kpi({ icon: 'chart', label: basis === 'cobro' ? 'Cobrado' : 'Facturación', value: money(c.t), sub: dl(c.t, pv && pv.t), small: true })}
-    ${kpi({ icon: 'leaf', label: 'Ganancia bruta', value: money(c.p), sub: 'margen ' + pctTxt(c.mg) + ' ' + (pv ? '· ' + dl(c.p, pv.p) : ''), small: true })}
-    ${kpi({ icon: 'orders', label: 'Ventas', value: c.n, sub: dl(c.n, pv && pv.n), tone: 'info' })}
-    ${kpi({ icon: 'bag', label: 'Ticket promedio', value: money(c.avg), sub: dl(c.avg, pv && pv.avg), tone: 'terra', small: true })}
+    ${kpi({ icon: 'chart', label: basis === 'cobro' ? 'Cobrado' : 'Facturación', value: money(c.t), sub: dl(c.t, pv && pv.t), small: true, bg: 'orange', help: basis === 'cobro' ? 'Plata que efectivamente entró en el período.' : 'Total vendido en el período, con descuentos aplicados. Es lo que facturaste, no lo que ya cobraste.' })}
+    ${kpi({ icon: 'leaf', label: 'Ganancia bruta', value: money(c.p), sub: 'margen ' + pctTxt(c.mg) + ' ' + (pv ? '· ' + dl(c.p, pv.p) : ''), small: true, bg: 'sage', help: 'Venta menos costo directo (ingredientes, envase, etiqueta y elaboración). El margen bruto es esa ganancia dividida por la venta. No descuenta gastos fijos.' })}
+    ${kpi({ icon: 'orders', label: 'Ventas', value: c.n, sub: dl(c.n, pv && pv.n), help: 'Cantidad de pedidos del período, sin contar los cancelados.' })}
+    ${kpi({ icon: 'bag', label: 'Ticket promedio', value: money(c.avg), sub: dl(c.avg, pv && pv.avg), bg: 'cream', small: true, help: 'Lo que gasta en promedio cada pedido: facturación dividida por la cantidad de ventas.' })}
   </div>
   <div class="card"><div class="sec-title"><h2>Evolución de ventas</h2><span class="hint">${span > 45 ? 'Por semana' : span <= 1 ? 'Últimos 14 días' : 'Por día · viernes resaltados'}</span></div>${barChart(series, { label: 'Evolución de ventas' })}</div>
   <div class="grid g2">
@@ -536,46 +406,7 @@ function vVentas() {
 }
 
 /* ---------- COBRAR ---------- */
-function vCobrar() {
-  const D = TODAY(), monday = addDays(D, -((weekday(D) + 6) % 7));
-  const owed = S.orders.filter(o => balanceOf(o) > 0);
-  const late = owed.filter(o => o.status === 'entregado' && o.deliveryDate < D || o.deliveryDate < D).sort((a, b) => a.deliveryDate.localeCompare(b.deliveryDate));
-  const partial = owed.filter(o => paidOf(o) > 0 && !late.includes(o));
-  const onDelivery = owed.filter(o => !late.includes(o) && !partial.includes(o)).sort((a, b) => a.deliveryDate.localeCompare(b.deliveryDate) || a.slot.localeCompare(b.slot));
-  const payToday = S.payments.filter(p => p.date === D), payWeek = S.payments.filter(p => p.date >= monday && p.date <= D);
-  const row = (o, extra) => { const c = clientById(o.clientId), paid = paidOf(o); return `<div class="row" style="flex-wrap:wrap"><div class="row-main" style="min-width:200px"><div class="row-title"><span class="click" data-act="order" data-arg="${o.id}" style="cursor:pointer">${esc(c.name)} <span class="faint" style="font-weight:600">#${o.number}</span></span> ${extra || ''}</div><div class="row-sub">${esc(itemsText(o))} · entrega ${relDay(o.deliveryDate).toLowerCase()} · ${STATUS[o.status].toLowerCase()} · ${o.payMethod}${paid ? ' · pagó ' + money(paid) + ' de ' + money(o.total) : ''}</div></div><div class="row-end" style="flex-direction:row;align-items:center;gap:10px"><b>${money(balanceOf(o))}</b><button class="btn sm primary" data-act="pay" data-arg="${o.id}">Registrar cobro</button></div></div>`; };
-  const hist = S.payments.filter(p => U.cob.hist === 'todos' || p.method === U.cob.hist).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)).slice(0, 30);
-  return `<div class="wrap">
-  ${pageHead('Cobrar', 'Lo que te deben y lo que ya entró. Cobrar y entregar son procesos separados: un pedido puede estar pagado y sin entregar, o entregado y sin cobrar.')}
-  <div class="grid g-kpi">
-    ${kpi({ icon: 'wallet', label: 'Te deben en total', value: money(sum(owed, balanceOf)), sub: owed.length + ' pedidos con saldo', tone: 'bad', small: true })}
-    ${kpi({ icon: 'cash', label: 'Cobraste hoy', value: money(sum(payToday, p => p.amount)), sub: payToday.length + ' cobros', small: true })}
-    ${kpi({ icon: 'calendar', label: 'Cobraste esta semana', value: money(sum(payWeek, p => p.amount)), sub: 'desde el lunes ' + fmtDate(monday), tone: 'info', small: true })}
-    ${kpi({ icon: 'alert', label: 'Atrasados', value: money(sum(late, balanceOf)), sub: late.length + ' pedidos de días anteriores', tone: 'warn', small: true })}
-  </div>
-  <div class="card"><div class="sec-title"><h2>Atrasados</h2><span class="hint">${money(sum(late, balanceOf))}</span></div><div class="rows">${late.map(o => row(o, `<span class="chip ${diffDays(D, o.deliveryDate) > 5 ? 'bad' : 'warn'}">${ago(o.deliveryDate)}</span>`)).join('') || emptyBox('No hay deudas atrasadas.')}</div></div>
-  <div class="card"><div class="sec-title"><h2>Señas y pagos parciales</h2><span class="hint">${money(sum(partial, balanceOf))} por completar</span></div><div class="rows">${partial.map(o => row(o, '<span class="chip warn">Parcial</span>')).join('') || emptyBox('No hay pagos parciales abiertos.')}</div></div>
-  <div class="card"><div class="sec-title"><h2>A cobrar en la entrega</h2><span class="hint">${money(sum(onDelivery, balanceOf))}</span></div><div class="rows">${onDelivery.map(o => row(o)).join('') || emptyBox('No hay pedidos pendientes de cobro.')}</div></div>
-  <div class="card"><div class="sec-title"><h2>Historial de cobros</h2>${seg('cob-h', U.cob.hist, [['todos', 'Todos'], ['efectivo', 'Efectivo'], ['transferencia', 'Transferencia']])}</div><div class="rows">
-    ${hist.map(p => { const o = orderById(p.orderId); return `<div class="row click" data-act="order" data-arg="${o.id}"><span class="time-tag" style="width:64px;font-size:12px">${fmtDate(p.date)}<br><span class="faint" style="font-weight:600">${p.time}</span></span><div class="row-main"><div class="row-title">${esc(clientById(o.clientId).name)} <span class="faint" style="font-weight:600">#${o.number}</span></div><div class="row-sub">${p.kind} · ${p.method}${p.note ? ' · ' + esc(p.note) : ''}</div></div><div class="row-end"><b style="color:var(--good)">+${money(p.amount)}</b></div></div>`; }).join('') || emptyBox('Sin cobros.')}
-  </div></div></div>`;
-}
-
 /* ---------- CLIENTES ---------- */
-function vClientes() {
-  computeVip();
-  const all = S.clients.map(c => { const st = clientStats(c); return { c, st, tags: clientTags(c, st) }; }).filter(x => x.st.count > 0 || !x.c.favs || x.c.favs.length === 0);
-  const counts = {}; for (const x of all) for (const t of x.tags) counts[t] = (counts[t] || 0) + 1;
-  const q = U.cli.q.toLowerCase();
-  const list = all.filter(x => (U.cli.tag === 'todos' || x.tags.includes(U.cli.tag)) && (!q || x.c.name.toLowerCase().includes(q) || (x.c.phone || '').replace(/\D/g, '').includes(q.replace(/\D/g, '') || '~'))).sort((a, b) => b.st.total - a.st.total);
-  const tagChip = t => `<span class="chip ${t === 'vip' ? 'terra' : t === 'recompra' ? 'sage' : t === 'inactivo' ? '' : t === 'nuevo' ? 'info' : 'good'}">${TAGS[t]}</span>`;
-  return `<div class="wrap">
-  ${pageHead('Clientes', 'Quién te compra, cada cuánto y qué. Las etiquetas se calculan solas con el historial.')}
-  <div class="toolbar"><label class="search">${ic('search')}<input id="cli-q" type="search" placeholder="Buscar por nombre o teléfono" value="${esc(U.cli.q)}" data-input="cli-q" aria-label="Buscar clientes"></label>
-  ${seg('cli-tag', U.cli.tag, [['todos', 'Todos <span class="badge">' + all.length + '</span>'], ...Object.keys(TAGS).map(t => [t, TAGS[t] + ' <span class="badge">' + (counts[t] || 0) + '</span>'])])}</div>
-  <div class="card"><div class="rows">${list.map(({ c, st, tags }) => `<div class="row click" data-act="client" data-arg="${c.id}"><span class="cl-av ${c.biz ? 'biz' : ''}">${initials(c.name)}</span><div class="row-main"><div class="row-title">${esc(c.name)} ${tags.map(tagChip).join('')}</div><div class="row-sub">${esc(c.phone || 'Sin teléfono')} · ${st.count} ${st.count === 1 ? 'compra' : 'compras'}${st.last ? ' · última ' + ago(st.last) : ''}${st.every ? ' · cada ~' + st.every + ' días' : ''}${st.fav ? ' · ' + esc(skuShort(skuById(st.fav))) : ''}</div></div><div class="row-end"><b>${money(st.total)}</b>${st.balance > 0 ? `<span class="chip bad">Debe ${money(st.balance)}</span>` : `<span class="hint">ticket ${money(st.avg)}</span>`}</div></div>`).join('') || emptyBox('No hay clientes con ese filtro.')}</div></div>
-  </div>`;
-}
 function waMessage(c, st) {
   const first = c.name.split(' ')[0];
   const fav = st.fav ? skuShort(skuById(st.fav)).toLowerCase() : 'yogur';
@@ -584,74 +415,6 @@ function waMessage(c, st) {
 }
 
 /* ---------- ESTRATEGIA ---------- */
-function vEstrategia() {
-  const D = TODAY(), from = addDays(D, -30);
-  const recent = S.orders.filter(o => !o.cancelled && o.createdAt > from);
-  computeVip();
-  const per = S.skus.map(s => {
-    let u = 0, rev = 0, gp = 0;
-    for (const o of recent) for (const it of o.items) if (it.skuId === s.id) { const f = 1 - (o.discountPct || 0) / 100; u += it.qty; rev += it.qty * it.unitPrice * f; gp += it.qty * (it.unitPrice * f - it.unitCost); }
-    return { s, u, rev, gp, m: rev ? gp / rev : 0, unitM: (s.price - skuCost(s).total) / s.price };
-  }).sort((a, b) => b.gp - a.gp);
-  const byMargin = per.slice().sort((a, b) => b.unitM - a.unitM);
-  const wd = [0, 0, 0, 0, 0, 0, 0]; for (const o of S.orders.filter(o => !o.cancelled && o.deliveryDate < D && o.deliveryDate > addDays(D, -60))) wd[weekday(o.deliveryDate)]++;
-  const wtot = sum(wd), topW = wd.indexOf(Math.max(...wd));
-  const envShare = sum(per, p => p.u * (skuCost(p.s).env + skuCost(p.s).eti)) / Math.max(1, sum(per, p => p.u * skuCost(p.s).total));
-  const clients = S.clients.map(c => { const st = clientStats(c); return { c, st, tags: clientTags(c, st) }; }).filter(x => x.st.count);
-  const repeat = clients.filter(x => x.st.count >= 2).length;
-  const reco = clients.filter(x => x.tags.includes('recompra'));
-  const everys = clients.filter(x => x.st.every).map(x => x.st.every);
-  const avgEvery = everys.length ? Math.round(sum(everys) / everys.length) : 0;
-  const soon = sum(S.skus, s => skuStock(s.id).soon);
-  const chan = {}; for (const o of recent) { chan[o.channel] = chan[o.channel] || { t: 0, n: 0 }; chan[o.channel].t += o.total; chan[o.channel].n++; }
-  const chBest = Object.keys(chan).filter(k => k !== 'mayorista').sort((a, b) => chan[b].t / chan[b].n - chan[a].t / chan[a].n)[0];
-  const top80 = (() => { const tot = sum(per, p => p.gp); let acc = 0, n = 0; for (const p of per) { acc += p.gp; n++; if (acc >= tot * .8) break; } return n; })();
-  const nat500 = skuById('nat500'), packPrice = Math.round(nat500.price * 4 * (1 - U.est.disc / 100) / 100) * 100, packCost = skuCost(nat500).total * 4;
-  const packGp = packPrice - packCost, monthPacks = U.est.packs * 4.33;
-
-  const facts = [
-    [`${skuShort(byMargin[0].s)} y ${skuShort(byMargin[1].s)} tienen los márgenes más altos`, `${pctTxt(byMargin[0].unitM)} y ${pctTxt(byMargin[1].unitM)} de margen bruto por unidad. El más bajo es ${skuShort(byMargin[byMargin.length - 1].s)} con ${pctTxt(byMargin[byMargin.length - 1].unitM)}.`],
-    [`Los ${DIAS[topW]} concentran más entregas`, `${pctTxt(wd[topW] / Math.max(1, wtot))} de las entregas de los últimos 60 días, contra ${pctTxt(1 / 7)} si se repartieran parejo.`],
-    [`El envase, la tapa y la etiqueta son el ${pctTxt(envShare)} del costo`, 'Ponderado por lo que vendiste en 30 días. En los frascos de 250 g pesa todavía más.'],
-    [`${repeat} de ${clients.length} clientes volvieron a comprar`, `En promedio compran cada ${avgEvery} días. ${reco.length} ya pasaron su tiempo habitual sin pedir.`],
-    [`${top80} productos te dejan el 80% de la ganancia`, per.slice(0, top80).map(p => skuShort(p.s)).join(', ') + '.'],
-  ];
-  if (chBest) facts.push([`${CHANNELS[chBest]} tiene el ticket más alto entre particulares`, `${money(chan[chBest].t / chan[chBest].n)} promedio por pedido en 30 días.`]);
-  if (soon) facts.push([`${soon} unidades vencen en 3 días o menos`, 'Si no salen en pedidos, se pierden a costo.']);
-  const ideas = [
-    ['Ofrecé un pack semanal de 4 × Natural 500 g', `Precio sugerido ${money(packPrice)} (${U.est.disc}% menos). Asegura recompra y simplifica la producción. Probalo con el simulador de abajo.`],
-    [`Empujá ${FLAVORS[byMargin[0].s.flavor].name.toLowerCase()} en Instagram`, 'Es de lo más rentable por unidad: conviene que sea el producto que más se ve.'],
-    [`Escribile a ${reco.length} clientes que están por reponer`, 'Un mensaje corto el día que suelen pedir. El sistema arma el texto, vos lo mandás.'],
-    ['Sumá un frasco retornable con descuento', 'Si el envase pesa tanto en el costo, recuperar frascos baja el costo unitario.'],
-    [`Reforzá stock para los ${DIAS[topW]}`, 'Programá producción el día anterior para no quedarte corta.'],
-  ];
-  if (soon) ideas.push(['Promo para lotes por vencer', 'Un topping de regalo o 2×1 en los frascos que vencen esta semana.']);
-
-  const evs = calendarEvents();
-  return `<div class="wrap">
-  ${pageHead('Estrategia', 'Lecturas de tus números de los últimos 30 a 60 días e ideas para probar. Los datos son cálculos; las ideas son hipótesis.')}
-  <div class="grid g2">
-    <div class="card"><div class="sec-title"><h2>Lo que dicen tus números</h2><span class="chip info">Dato</span></div>${facts.map(([t, s]) => `<div class="insight"><span class="chip info tag">Dato</span><div><b>${esc(t)}</b><p>${esc(s)}</p></div></div>`).join('')}</div>
-    <div class="card"><div class="sec-title"><h2>Ideas para probar</h2><span class="chip terra">Idea</span></div>${ideas.map(([t, s]) => `<div class="insight"><span class="chip terra tag">Idea</span><div><b>${esc(t)}</b><p>${esc(s)}</p></div></div>`).join('')}</div>
-  </div>
-  <div class="grid g2">
-    <div class="card"><div class="sec-title"><h2>Ranking de rentabilidad</h2><span class="hint">Últimos 30 días</span></div>${hbars(per.map(p => ({ label: p.s.name, v: p.gp, sub: pctTxt(p.m) + ' · ' + p.u + ' u', icon: jar(p.s.flavor, 22) })))}</div>
-    <div class="card"><div class="sec-title"><h2>Recompra</h2><span class="hint">Cada ~${avgEvery} días en promedio</span></div>
-      <div class="tri" style="margin-bottom:12px"><div class="stat"><small>Volvieron a comprar</small><b>${pctTxt(repeat / Math.max(1, clients.length))}</b></div><div class="stat"><small>Por reponer ahora</small><b>${reco.length}</b></div><div class="stat"><small>Inactivos</small><b>${clients.filter(x => x.tags.includes('inactivo')).length}</b></div></div>
-      <div class="rows">${reco.slice(0, 6).map(({ c, st }) => `<div class="row"><span class="cl-av ${c.biz ? 'biz' : ''}">${initials(c.name)}</span><div class="row-main"><div class="row-title">${esc(c.name)}</div><div class="row-sub">Compra cada ~${st.every} días · última ${ago(st.last)}</div></div><button class="btn sm" data-act="copy-wa" data-arg="${c.id}">${ic('msg', 'sm')}Copiar mensaje</button></div>`).join('') || emptyBox('Nadie atrasado en su recompra.')}</div></div>
-  </div>
-  <div class="card"><div class="sec-title"><div><h2>Escenario: pack semanal</h2><p class="hint" style="margin:4px 0 0">Escenario hipotético con tus costos actuales. No es una proyección garantizada.</p></div></div>
-    <div class="frow"><div class="field"><label for="est-packs">Packs por semana: <b>${U.est.packs}</b></label><input type="range" class="range" id="est-packs" min="0" max="40" value="${U.est.packs}" data-input="est-packs"></div>
-    <div class="field"><label for="est-disc">Descuento del pack: <b>${U.est.disc}%</b></label><input type="range" class="range" id="est-disc" min="0" max="25" value="${U.est.disc}" data-input="est-disc"></div></div>
-    <div class="scenario-out"><div class="stat"><small>Precio del pack (4 × 500 g)</small><b>${money(packPrice)}</b></div><div class="stat"><small>Ganancia bruta por pack</small><b>${money(packGp)} · ${pctTxt(packGp / packPrice)}</b></div><div class="stat"><small>Ganancia bruta estimada por mes</small><b>${money(packGp * monthPacks)}</b></div></div>
-  </div>
-  <div class="card"><div class="sec-title"><h2>Calendario comercial</h2><button class="btn sm" data-act="ev-new">${ic('plus', 'sm')}Fecha</button></div>
-    ${evs.map(e => `<div class="cal-ev"><div style="display:flex;justify-content:space-between;gap:10px"><b>${esc(e.name)}</b><span class="num muted">${fmtDate(e.date)}</span></div><div class="hint" style="color:var(--terra-ink);font-weight:700">${e.next ? (e.next.date === D ? 'Hoy: ' : 'Próximo: ') + e.next.label + ' · ' + fmtDate(e.next.date) : ''}</div>
-      <div class="cal-steps">${e.steps.map(s => `<span class="${s.date < D ? 'past' : s.date === D ? 'now' : ''}">${fmtDate(s.date)} ${s.label}</span>`).join('')}</div></div>`).join('')}
-    <p class="hint" style="margin:10px 0 0">Promos sugeridas: pack de regalo con granola y miel para Navidad, combo “vuelta a la rutina” en marzo, frascos con moño para el Día de la Madre.</p>
-  </div>
-  </div>`;
-}
 function calendarEvents() {
   const D = TODAY(), y = +D.slice(0, 4);
   const thirdSunOct = yr => { const d1 = new Date(Date.UTC(yr, 9, 1)).getUTCDay(); return fromT(Date.UTC(yr, 9, 1 + ((7 - d1) % 7) + 14)); };
@@ -665,4 +428,4 @@ function calendarEvents() {
   });
 }
 
-const VIEWS = { inicio: vInicio, pedidos: vPedidos, produccion: vProduccion, envios: vEnvios, inventario: vInventario, ventas: vVentas, cobrar: vCobrar, clientes: vClientes, estrategia: vEstrategia };
+const VIEWS = { bienvenida: vBienvenida, inicio: vInicio, pedidos: vPedidos, produccion: vProduccion, envios: vEnvios, inventario: vInventario, ventas: vVentas, cobrar: vCobrar, clientes: vClientes, estrategia: vEstrategia };

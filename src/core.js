@@ -46,6 +46,8 @@ const FLAVORS = {
   arandanos: { name: 'Arándanos', top: '#4F4889' },
 };
 const SIZES = { 250: '250 g', 500: '500 g', 1000: '1 kg' };
+const sizeLabel = n => SIZES[n] || (n >= 1000 ? fmtN(n / 1000, 2) + ' kg' : n + ' g');
+let LOG_RES = true;
 
 const SKUS_SEED = [
   { id: 'nat250', code: 'YN250', flavor: 'natural', size: 250, price: 3200, labor: 350, shelf: 21, min: 6, recipe: { leche: .75, cultivo: .4, frasco250: 1, tapa: 1, etiqueta: 1 } },
@@ -137,7 +139,7 @@ function insById(id) { return S.insumos.find(i => i.id === id); }
 function skuById(id) { return S.skus.find(s => s.id === id); }
 function clientById(id) { return S.clients.find(c => c.id === id); }
 function orderById(id) { return S.orders.find(o => o.id === id); }
-function skuShort(s) { return (s.flavor === 'natural' ? 'Natural' : FLAVORS[s.flavor].name) + ' ' + SIZES[s.size]; }
+function skuShort(s) { return (s.flavor === 'natural' ? 'Natural' : (FLAVORS[s.flavor] || { name: s.name }).name) + ' ' + sizeLabel(s.size); }
 
 function skuCost(sku, overrides) {
   const out = { ing: 0, env: 0, eti: 0, labor: sku.labor, total: 0 };
@@ -231,6 +233,7 @@ function rebalance() {
         if (missing <= 0) break;
         const take = Math.min(missing, lotFree(l));
         S.reservations.push({ id: uid('r'), orderId: o.id, skuId: sku, lotId: l.id, qty: take });
+        if (LOG_RES) addMove({ kind: 'producto', skuId: sku, lotId: l.id, qty: 0, resQty: take, type: 'reserva', note: 'Pedido #' + o.number + ' · lote ' + l.code });
         missing -= take;
       }
     }
@@ -332,6 +335,7 @@ function seed(D, config) {
     insumos: INSUMOS_SEED.map(([id, name, unit, cat, cost, stock, min]) => ({ id, name, unit, cat, cost, stock, min })),
     clients: [], orders: [], payments: [], lots: [], reservations: [], prodOrders: [], moves: [], events: [],
     seq: { order: 1057, po: 1 },
+    ideas: {}, onboard: { products: true, stock: false, clients: false, order: false }, flavors: {},
   };
   S = st;
 
@@ -471,7 +475,7 @@ function seed(D, config) {
   st.moves.sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
 
   st.events = [];
-  rebalance();
+  LOG_RES = false; rebalance(); LOG_RES = true;
   S = st;
   return st;
 }
@@ -513,6 +517,7 @@ const A = {
   cancelOrder(id) {
     const o = orderById(id);
     if (o.stockConsumed || o.status === 'entregado') fail('El pedido #' + o.number + ' ya salió del local: no se puede cancelar.');
+    for (const r of S.reservations.filter(x => x.orderId === o.id)) addMove({ kind: 'producto', skuId: r.skuId, lotId: r.lotId, qty: 0, resQty: -r.qty, type: 'libera', note: 'Pedido #' + o.number + ' cancelado' });
     releaseOrder(o);
     o.cancelled = true;
     logOrder(o, 'Pedido cancelado');
@@ -743,6 +748,38 @@ const A = {
     for (const k in f.recipe) { const v = +f.recipe[k]; if (v < 0 || isNaN(v)) fail('Revisá las cantidades de la receta.'); if (v > 0) recipe[k] = v; }
     Object.assign(s, { price, labor, shelf, min, recipe });
     return 'Receta de ' + s.name + ' actualizada';
+  },
+  importClients(rows) {
+    let n = 0;
+    for (const r of rows) { A.addClient({ name: r.nombre, phone: r.telefono, address: r.direccion, barrio: r.barrio, ref: r.referencia, channel: r.canal || 'whatsapp', delivery: r.direccion ? 'uber' : 'retiro' }); n++; }
+    S.onboard.clients = true;
+    return n + (n === 1 ? ' cliente importado' : ' clientes importados');
+  },
+  importProducts(rows) {
+    let nNew = 0, nUpd = 0;
+    for (const r of rows) {
+      if (r._update) { const s = skuById(r._update); s.price = r.precio; nUpd++; continue; }
+      const fk = 'f_' + uid(''), base = r.producto.replace(/^yogur(t)?\s+(griego\s+)?(de\s+|con\s+)?/i, '').replace(/\s*\d+(\s*(g|gr|kg|ml))\b.*$/i, '').trim() || r.producto;
+      S.flavors[fk] = { name: cap(base), top: '#C9A74A' }; FLAVORS[fk] = S.flavors[fk];
+      const id = uid('sku');
+      S.skus.push({ id, code: (base.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase() || 'PRD') + r.tamano, flavor: fk, size: r.tamano, price: r.precio, labor: 0, shelf: r.vida, min: 0, recipe: {}, name: r.producto, imported: true });
+      nNew++;
+    }
+    S.onboard.products = true;
+    return [nNew ? nNew + (nNew === 1 ? ' producto nuevo' : ' productos nuevos') : '', nUpd ? nUpd + (nUpd === 1 ? ' precio actualizado' : ' precios actualizados') : ''].filter(Boolean).join(' y ') || 'Nada para importar';
+  },
+  importStock(rows) {
+    let n = 0, u = 0;
+    for (const r of rows) {
+      const sku = skuById(r._sku);
+      const lot = { id: uid('l'), code: lotCode(sku, r.elaboracion), skuId: sku.id, made: r.elaboracion, expires: r.vencimiento, qty: r.cantidad, initial: r.cantidad };
+      S.lots.push(lot);
+      addMove({ kind: 'producto', skuId: sku.id, lotId: lot.id, qty: r.cantidad, type: 'produccion', note: 'Stock inicial importado · lote ' + lot.code });
+      n++; u += r.cantidad;
+    }
+    rebalance();
+    S.onboard.stock = true;
+    return u + ' unidades cargadas en ' + n + (n === 1 ? ' lote' : ' lotes');
   },
   addEvent(name, date) {
     if (!(name || '').trim()) fail('Poné un nombre a la fecha.');

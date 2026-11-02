@@ -118,8 +118,8 @@ function builderHtml() {
   const sku = S.skus.find(s => s.flavor === b.flavor && s.size === b.size);
   const avail = Math.max(0, draftAvail(sku.id));
   const unit = lineUnitPrice(sku, b.tops);
-  return `<div><div class="hint" style="margin-bottom:6px">Sabor</div><div class="opt-grid">${Object.keys(FLAVORS).map(f => `<button type="button" class="opt ${b.flavor === f ? 'on' : ''}" data-act="nf-flavor" data-arg="${f}">${jar(f, 20)}${FLAVORS[f].name}</button>`).join('')}</div></div>
-    <div class="frow" style="align-items:end"><div><div class="hint" style="margin-bottom:6px">Tamaño</div><div class="opt-grid">${[250, 500, 1000].map(z => `<button type="button" class="opt ${b.size === z ? 'on' : ''}" data-act="nf-size" data-arg="${z}" ${sizes.includes(z) ? '' : 'disabled'}>${SIZES[z]}</button>`).join('')}</div></div>
+  return `<div><div class="hint" style="margin-bottom:6px">Sabor</div><div class="opt-grid">${Object.keys(FLAVORS).filter(f => S.skus.some(x => x.flavor === f)).map(f => `<button type="button" class="opt ${b.flavor === f ? 'on' : ''}" data-act="nf-flavor" data-arg="${f}">${jar(f, 20)}${FLAVORS[f].name}</button>`).join('')}</div></div>
+    <div class="frow" style="align-items:end"><div><div class="hint" style="margin-bottom:6px">Tamaño</div><div class="opt-grid">${[...new Set([250, 500, 1000].concat(sizes))].sort((x, y) => x - y).map(z => `<button type="button" class="opt ${b.size === z ? 'on' : ''}" data-act="nf-size" data-arg="${z}" ${sizes.includes(z) ? '' : 'disabled'}>${sizeLabel(z)}</button>`).join('')}</div></div>
     <div><div class="hint" style="margin-bottom:6px">Cantidad</div><div class="stepper"><button type="button" data-act="nf-q" data-arg="-1" aria-label="Menos">−</button><input id="nf-bq" type="number" min="1" value="${b.qty}" data-nf="bqty" aria-label="Cantidad"><button type="button" data-act="nf-q" data-arg="1" aria-label="Más">+</button></div></div></div>
     <div><div class="hint" style="margin-bottom:6px">Toppings (opcional, por frasco)</div><div class="opt-grid">${Object.keys(TOPPINGS).map(t => `<button type="button" class="opt ${b.tops.includes(t) ? 'on' : ''}" data-act="nf-top" data-arg="${t}">${TOPPINGS[t].name} <span class="faint">+${money(TOPPINGS[t].price)}</span></button>`).join('')}</div></div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:space-between"><span class="hint">${esc(sku.name)} · ${money(unit)} c/u · ${avail > 0 ? `<b style="color:var(--good)">${avail} disponibles</b>` : '<b style="color:var(--terra-ink)">sin stock libre</b>'}${b.qty > avail ? ` · ${b.qty - avail} se suman a producción` : ''}</span><button type="button" class="btn soft" data-act="nf-add">${ic('plus', 'sm')}Agregar ${b.qty} × ${money(unit * b.qty)}</button></div>`;
@@ -178,6 +178,7 @@ function draftInput(el) {
 }
 function submitOrder() {
   const r = run(() => A.saveOrder(DR, DR.editId));
+  if (r && !DR.editId && !S.onboard.order) { S.onboard.order = true; persist(); }
   if (r) { const id = r.id; M.back = null; closeModal(); if (!DR.editId && U.view !== 'pedidos') { /* queda en la vista actual */ } DR = null; openOrder(id); }
 }
 
@@ -268,23 +269,6 @@ function openSkuEdit(id) {
     <div class="frow3">${S.insumos.map(i => `<div class="field"><label for="se-r-${i.id}">${esc(i.name)} (${i.unit})</label><input type="number" class="input" id="se-r-${i.id}" step="any" min="0" value="${s.recipe[i.id] || 0}"></div>`).join('')}</div></div>
   </div>${mFoot('Guardar receta')}`, { wide: true, submit: () => { const recipe = {}; for (const i of S.insumos) recipe[i.id] = fval('se-r-' + i.id); done(run(() => A.updateSku(id, { price: fval('se-price'), labor: fval('se-labor'), shelf: fval('se-shelf'), min: fval('se-min'), recipe }))); } });
 }
-function openClient(id) {
-  computeVip();
-  const c = clientById(id), st = clientStats(c), tags = clientTags(c, st);
-  const sugg = tags.includes('recompra') ? `Compra cada ~${st.every} días y su última compra fue ${ago(st.last)}. Podrías consultarle si necesita reponer.`
-    : tags.includes('inactivo') ? `No compra desde ${ago(st.last)}. Un mensaje con una novedad o un sabor nuevo puede reactivarla.`
-      : tags.includes('nuevo') ? 'Es cliente nuevo. Escribile después de la entrega para saber qué le pareció.'
-        : st.hasOpen ? 'Tiene un pedido en curso.' : st.every ? `Suele comprar cada ~${st.every} días. Su próxima compra sería alrededor del ${fmtDate(addDays(st.last, st.every))}.` : 'Todavía no hay suficiente historial para estimar su frecuencia.';
-  const msg = waMessage(c, st);
-  openModal(mHead(esc(c.name), `${esc(c.phone || 'Sin teléfono')} · ${esc([c.address, c.barrio].filter(Boolean).join(', ') || 'Sin dirección')}`) + `<div class="m-body">
-    <div class="chips">${tags.map(t => `<span class="chip ${t === 'vip' ? 'terra' : t === 'recompra' ? 'sage' : t === 'nuevo' ? 'info' : t === 'inactivo' ? '' : 'good'}">${TAGS[t]}</span>`).join('')}${c.biz ? '<span class="chip">Comercio</span>' : ''}<span class="chip">${CHANNELS[c.channel] || ''}</span></div>
-    <div class="stat-grid"><div class="stat"><small>Compras</small><b>${st.count}</b></div><div class="stat"><small>Total comprado</small><b>${money(st.total)}</b></div><div class="stat"><small>Ticket promedio</small><b>${money(st.avg)}</b></div><div class="stat"><small>Frecuencia</small><b>${st.every ? 'cada ~' + st.every + ' días' : '—'}</b></div><div class="stat"><small>Última compra</small><b>${st.last ? ago(st.last) : '—'}</b></div><div class="stat"><small>Saldo pendiente</small><b style="color:var(--${st.balance > 0 ? 'bad' : 'ink'})">${money(st.balance)}</b></div></div>
-    ${st.fav ? `<div style="display:flex;gap:10px;align-items:center">${jar(skuById(st.fav).flavor, 36)}<div><div class="hint">Producto favorito</div><b>${esc(skuById(st.fav).name)}</b></div></div>` : ''}
-    <div class="suggest">${ic('spark')}<p>${sugg}</p></div>
-    <div><div class="flabel" style="margin-bottom:6px">Mensaje sugerido para WhatsApp</div><div class="msg-box">${esc(msg)}</div><div class="chips" style="margin-top:8px"><button type="button" class="btn sm" data-act="copy-wa" data-arg="${c.id}">${ic('copy', 'sm')}Copiar mensaje</button>${c.phone ? `<button type="button" class="btn sm ghost" data-act="copy-phone" data-arg="${c.id}">${ic('phone', 'sm')}Copiar teléfono</button>` : ''}<span class="hint">No se envía nada automáticamente.</span></div></div>
-    <div><div class="flabel" style="margin-bottom:6px">Historial de pedidos</div><div class="rows">${st.orders.map(o => `<div class="row click" data-act="order" data-arg="${o.id}"><span class="time-tag" style="width:60px;font-size:12px">${fmtDate(o.deliveryDate)}</span><div class="row-main"><div class="row-title" style="font-size:13.5px">#${o.number}</div><div class="row-sub">${esc(itemsText(o))}</div></div><div class="row-end"><b>${money(o.total)}</b>${payChip(o)}</div></div>`).join('') || emptyBox('Sin pedidos todavía.')}</div></div>
-  </div><div class="m-foot"><button type="button" class="btn ghost grow" data-act="close">Cerrar</button><button type="button" class="btn primary" data-act="new-order" data-arg="${c.id}">${ic('plus', 'sm')}Nuevo pedido</button></div>`, { drawer: true });
-}
 function openEvent() {
   openModal(mHead('Agregar fecha comercial', 'Se arma sola la cuenta regresiva: preparar, publicar, publicidad y último día de pedidos.') + `<div class="m-body"><div class="field"><label for="ev-n">Nombre</label><input class="input" id="ev-n" placeholder="Ej.: Día del Padre" autofocus></div><div class="field"><label for="ev-d">Fecha</label><input type="date" class="input" id="ev-d" min="${TODAY()}"></div></div>${mFoot('Agregar')}`, { submit: () => done(run(() => A.addEvent(fval('ev-n'), fval('ev-d')))) });
 }
@@ -320,8 +304,8 @@ function openMore() {
 }
 
 /* ---------- Tema ---------- */
-function isDark() { const t = document.documentElement.dataset.theme; return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; }
-function toggleTheme() { const t = isDark() ? 'light' : 'dark'; document.documentElement.dataset.theme = t; try { localStorage.setItem('lg-theme', t); } catch (e) { } render(); }
+function isDark() { return document.documentElement.classList.contains('dark'); }
+function toggleTheme() { const t = isDark() ? 'light' : 'dark'; document.documentElement.classList.toggle('dark', t === 'dark'); try { localStorage.setItem('lg-theme', t); } catch (e) { } render(); }
 
 /* ---------- Armado de pantalla ---------- */
 const brandHtml = (compact) => S.config.brand.trim().toLowerCase() === 'la griega'
@@ -331,10 +315,11 @@ function renderChrome() {
   const b = navBadges(), dark = isDark();
   $('#side').innerHTML = `${brandHtml()}<nav class="nav" aria-label="Secciones">${NAV.map(([id, l, icn]) => `<a href="#${id}" class="${U.view === id ? 'on' : ''}" ${U.view === id ? 'aria-current="page"' : ''}>${ic(icn)}<span>${l}</span>${b[id] || ''}</a>`).join('')}</nav>
     <div class="side-cta"><button class="btn primary lg block" data-act="new-order">${ic('plus')}Nuevo pedido</button></div>
+    <button class="side-gri" data-act="gri-open" data-tour="gri">${griAvatar('md')}<span><b>Preguntale a Gri</b><small>Tu asistente</small></span></button>
     <div class="side-foot"><button class="btn soft block" data-act="tour">${ic('info', 'sm')}¿Cómo funciona?</button><span class="demo-pill" style="align-self:flex-start"><i></i>Modo demostración</span>
       <div class="user"><span class="avatar">${esc(initials(S.config.user))}</span><div style="min-width:0"><b>${esc(S.config.user)}</b><small>${esc(S.config.role)}</small></div></div>
       <div class="side-tools"><button class="btn sm" data-act="theme">${ic(dark ? 'sun' : 'moon', 'sm')}${dark ? 'Claro' : 'Oscuro'}</button><button class="btn sm" data-act="config">${ic('gear', 'sm')}Ajustes</button></div></div>`;
-  $('#topbar').innerHTML = `${brandHtml(true)}<div class="t-end"><span class="demo-pill"><i></i>Demo</span><button class="btn icon sm ghost" data-act="tour" aria-label="¿Cómo funciona?">${ic('info', 'sm')}</button><button class="btn icon sm ghost" data-act="theme" aria-label="Cambiar tema">${ic(dark ? 'sun' : 'moon', 'sm')}</button><button class="btn icon sm ghost" data-act="config" aria-label="Configuración">${ic('gear', 'sm')}</button></div>`;
+  $('#topbar').innerHTML = `${brandHtml(true)}<div class="t-end"><span class="demo-pill"><i></i>Demo</span><button class="top-gri" data-act="gri-open" data-tour="gri" aria-label="Preguntale a Gri">${griAvatar('sm')}</button><button class="btn icon sm ghost" data-act="tour" aria-label="¿Cómo funciona?">${ic('info', 'sm')}</button><button class="btn icon sm ghost" data-act="theme" aria-label="Cambiar tema">${ic(dark ? 'sun' : 'moon', 'sm')}</button><button class="btn icon sm ghost" data-act="config" aria-label="Configuración">${ic('gear', 'sm')}</button></div>`;
   const bn = (id, l, icn) => `<a href="#${id}" class="${U.view === id ? 'on' : ''}">${ic(icn)}<span>${l}</span>${b[id] ? b[id].replace('class="badge', 'class="badge bn-badge') : ''}</a>`;
   $('#bnav').innerHTML = bn('inicio', 'Inicio', 'home') + bn('pedidos', 'Pedidos', 'orders') + `<button class="plus" data-act="new-order" aria-label="Nuevo pedido">${ic('plus')}</button>` + bn('envios', 'Envíos', 'truck') + `<button data-act="more" class="${['produccion', 'inventario', 'ventas', 'cobrar', 'clientes', 'estrategia'].includes(U.view) ? 'on' : ''}">${ic('menu')}<span>Más</span></button>`;
 }
@@ -430,7 +415,7 @@ const ACT = {
   'nf-pay': a => { DR.payMethod = a; rerenderForm(); },
 };
 
-Object.assign(ACT, GRI_ACT, TOUR_ACT);
+Object.assign(ACT, GRI_ACT, TOUR_ACT, UI2_ACT, ONB_ACT);
 
 /* ---------- Arrastrar y soltar ---------- */
 const DRAG = { s: null, suppress: false };
@@ -476,6 +461,7 @@ document.addEventListener('contextmenu', e => { if (DRAG.s && DRAG.s.touch) e.pr
 /* ---------- Eventos globales ---------- */
 document.addEventListener('click', e => {
   if (DRAG.suppress) { e.preventDefault(); e.stopPropagation(); return; }
+  if (e.target.closest('.qhelp, .how')) return;
   const ov = e.target.closest('[data-overlay]');
   if (ov && e.target === ov) { closeModal(); return; }
   const el = e.target.closest('[data-act]');
@@ -529,13 +515,13 @@ window.addEventListener('hashchange', () => { const v = location.hash.slice(1); 
 
 /* ---------- Arranque ---------- */
 (function boot() {
-  try { const t = localStorage.getItem('lg-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) { }
+  try { document.documentElement.classList.toggle('dark', localStorage.getItem('lg-theme') === 'dark'); } catch (e) { }
   const saved = loadState();
-  if (saved && (saved.config.fixedDate || saved.demoDate === realToday())) { S = saved; rebalance(); }
+  if (saved && (saved.config.fixedDate || saved.demoDate === realToday())) { S = saved; S.ideas = S.ideas || {}; S.flavors = S.flavors || {}; S.onboard = S.onboard || { products: true, stock: false, clients: false, order: false }; Object.assign(FLAVORS, S.flavors); LOG_RES = false; rebalance(); LOG_RES = true; }
   else seed(saved && saved.config.fixedDate ? saved.config.fixedDate : realToday(), saved ? saved.config : null);
   persist();
   const v = location.hash.slice(1); if (VIEWS[v]) U.view = v;
+  else if (!tourSeen()) { markSeen(); U.view = 'bienvenida'; }
   render();
   griRenderPanel();
-  if (!tourSeen()) setTimeout(openWelcome, 300);
 })();

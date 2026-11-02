@@ -1,11 +1,11 @@
 'use strict';
 /* =====================================================================
-   gri.js — Gri, la asistente de La Griega.
+   gri.js — Gri, la asistente de Griega.
    Motor local: lee el estado real de la demo y arma recomendaciones y respuestas
    con reglas. No llama a ninguna IA.
 
    Para integrar una IA más adelante:
-   - griContext() ya devuelve un resumen estructurado del negocio.
+   - griContext() devuelve un resumen estructurado del negocio.
    - GRI_ENGINE.ask(pregunta) es el único punto de entrada del chat. Se puede reemplazar
      por una llamada a un backend propio que reciba { pregunta, contexto: griContext() }
      y devuelva { html, actions }. Las acciones siguen pasando por ACT y A.*, con las
@@ -13,10 +13,10 @@
    ===================================================================== */
 
 const LEVELS = {
-  urgente: { label: 'Urgente', tone: 'bad', rank: 0 },
-  hoy: { label: 'Para resolver hoy', tone: 'warn', rank: 1 },
-  oportunidad: { label: 'Oportunidad', tone: 'good', rank: 2 },
-  info: { label: 'Para tener en cuenta', tone: 'info', rank: 3 },
+  urgente: { label: 'Urgente', tone: 'red', rank: 0 },
+  hoy: { label: 'Hoy', tone: 'amber', rank: 1 },
+  semana: { label: 'Esta semana', tone: 'green', rank: 2 },
+  info: { label: 'Para tener en cuenta', tone: 'blue', rank: 3 },
 };
 const fname = c => c.biz ? c.name : c.name.split(' ')[0];
 const joinList = a => a.length <= 1 ? (a[0] || '') : a.slice(0, -1).join(', ') + ' y ' + a[a.length - 1];
@@ -27,147 +27,113 @@ const missMap = orders => { const m = {}; for (const o of orders) { const s = sh
 const skuList = m => Object.keys(m).map(k => m[k] + ' × ' + skuShort(skuById(k)));
 const B = s => '<b>' + esc(s) + '</b>';
 
-/* ---------- Recomendaciones priorizadas ---------- */
+/* ---------- Recomendaciones priorizadas ----------
+   Cada una: title (qué hacer), reason (por qué), level, todo (frase para el resumen), actions. */
 function griRecs() {
-  const D = TODAY(), out = [], name = esc(S.config.user);
+  const D = TODAY(), out = [];
   const open = S.orders.filter(isOpen);
   const today = open.filter(o => o.deliveryDate <= D);
   const plan = productionPlan();
   const sched = {}; for (const p of plan) sched[p.sku.id] = p.scheduled;
+  const add = r => out.push(r);
 
-  /* Incidencias de envío */
   for (const o of open.filter(o => o.ship && o.ship.incident)) {
     const c = clientById(o.clientId);
-    out.push({ id: 'inc-' + o.id, level: 'urgente', score: 100, icon: 'alert', short: 'una incidencia en un envío', ask: '¿Vemos primero la incidencia del envío?',
-      text: `El envío de ${B(fname(c))} (#${o.number}) tuvo un problema: ${esc(o.ship.incident.type.toLowerCase())}. Conviene resolverlo antes de que se corra el horario.`,
-      actions: [{ label: 'Ver envío', act: 'go-ship', arg: o.id, primary: true }, { label: 'Llamar: copiar teléfono', act: 'copy-phone', arg: c.id }] });
+    add({ id: 'inc-' + o.id, level: 'urgente', score: 100, icon: 'alert', title: `Resolver el envío de ${fname(c)}`, reason: `Tuvo un problema: ${o.ship.incident.type.toLowerCase()}. Conviene resolverlo antes de que se corra el horario.`, todo: `resolver el envío de ${fname(c)}`,
+      actions: [{ label: 'Ver envío', act: 'go-ship', arg: o.id, primary: true }] });
   }
-
-  /* Pedidos de días anteriores que siguen abiertos */
   const lateDel = open.filter(o => o.deliveryDate < D);
-  if (lateDel.length) out.push({ id: 'late', level: 'urgente', score: 95, icon: 'clock', short: pl(lateDel.length, 'un pedido atrasado', lateDel.length + ' pedidos atrasados'), ask: '¿Arrancamos por los pedidos atrasados?',
-    text: `${lateDel.length === 1 ? 'Hay un pedido que tenía' : `Hay ${lateDel.length} pedidos que tenían`} que salir antes de hoy y ${pl(lateDel.length, 'sigue abierto', 'siguen abiertos')}: ${esc(joinList(lateDel.map(o => '#' + o.number + ' de ' + fname(clientById(o.clientId)))))}. Avisale al cliente y reprogramalo.`,
+  if (lateDel.length) add({ id: 'late', level: 'urgente', score: 95, icon: 'clock', title: `Reprogramar ${lateDel.length === 1 ? 'un pedido atrasado' : lateDel.length + ' pedidos atrasados'}`, reason: `Tenían que salir antes de hoy: ${joinList(lateDel.map(o => '#' + o.number + ' de ' + fname(clientById(o.clientId))))}.`, todo: 'reprogramar pedidos atrasados',
     actions: [{ label: 'Ver pedidos', act: 'go', arg: 'pedidos', primary: true }] });
 
-  /* Stock para las entregas de hoy */
   const shortToday = today.filter(o => !fullyReserved(o));
   const missToday = missMap(shortToday);
   const uncovered = {}; for (const k in missToday) { const u = missToday[k] - (sched[k] || 0); if (u > 0) uncovered[k] = u; }
-  const needAll = plan.filter(p => p.need > 0), forOrders = sum(needAll, p => p.forOrders), forStock = sum(needAll, p => p.forStock);
+  const forOrders = sum(plan, p => p.forOrders), forStock = sum(plan, p => p.forStock);
   if (Object.keys(uncovered).length) {
     const first = shortToday.slice().sort((a, b) => a.slot.localeCompare(b.slot))[0];
-    out.push({ id: 'short-today', level: 'urgente', score: 90, icon: 'pot', short: `faltan ${sum(Object.values(uncovered))} unidades para las entregas de hoy`, ask: '¿Te preparo la lista de producción?',
-      text: `${name}, para entregar hoy nos faltan ${esc(joinList(skuList(uncovered)))}. Afecta ${shortToday.length === 1 ? 'el pedido de ' + B(fname(clientById(first.clientId))) : shortToday.length + ' pedidos'}, el primero sale a las ${slotStart(first.slot)}.${needAll.length ? ` En total hay que producir ${forOrders + forStock} unidades.` : ''} ¿Querés que te prepare la lista?`,
-      actions: [{ label: 'Preparar lista de producción', act: 'gri-prodlist', primary: true }, { label: 'Ver producción', act: 'go', arg: 'produccion' }] });
-  } else if (needAll.length) {
-    out.push({ id: 'prod', level: forOrders ? 'hoy' : 'oportunidad', score: 80, icon: 'pot', short: forOrders ? `faltan ${forOrders} unidades por producir` : 'reponer stock mínimo', ask: '¿Te preparo la lista de producción?',
-      text: forOrders ? `${name}, para completar los pedidos confirmados necesitamos producir ${B(forOrders + ' ' + pl(forOrders, 'unidad', 'unidades'))}${forStock ? ` y ${forStock} más para llegar a tu stock mínimo` : ''}. ¿Querés que te prepare la lista?`
-        : `Los pedidos están cubiertos. Si producís ${forStock} unidades más, llegás al stock mínimo que configuraste.`,
-      actions: [{ label: 'Preparar lista de producción', act: 'gri-prodlist', primary: true }] });
+    add({ id: 'short-today', level: 'urgente', score: 90, icon: 'pot', title: 'Producir lo que falta para hoy', reason: `Faltan ${joinList(skuList(uncovered))} para pedidos que salen desde las ${slotStart(first.slot)}. Te puedo organizar la producción.`, todo: 'producir lo que falta para las entregas de hoy',
+      actions: [{ label: 'Organizar producción', act: 'gri-prodlist', arg: 'pedidos', primary: true }] });
+  } else if (forOrders) {
+    add({ id: 'prod', level: 'hoy', score: 80, icon: 'pot', title: 'Completar la producción pendiente', reason: `Tenemos que preparar ${forOrders} ${pl(forOrders, 'unidad', 'unidades')} para cubrir los pedidos confirmados. Te puedo organizar la producción.`, todo: 'completar la producción pendiente',
+      actions: [{ label: 'Organizar producción', act: 'gri-prodlist', arg: 'pedidos', primary: true }] });
   }
+  if (!forOrders && forStock) add({ id: 'restock', level: 'semana', score: 48, icon: 'boxes', title: 'Reponer stock mínimo', reason: `Los pedidos están cubiertos. Con ${forStock} ${pl(forStock, 'unidad', 'unidades')} más llegás a tu stock mínimo.`, todo: '',
+    actions: [{ label: 'Ver producción', act: 'go', arg: 'produccion', primary: true }] });
   if (Object.keys(missToday).length && !Object.keys(uncovered).length) {
     const inProg = S.prodOrders.filter(p => (p.status === 'en_curso' || p.status === 'programada') && missToday[p.skuId]);
-    out.push({ id: 'wait-prod', level: 'info', score: 40, icon: 'pot', short: '',
-      text: `Los pedidos de hoy que esperan stock quedan cubiertos con ${esc(joinList(inProg.map(p => p.qty + ' × ' + skuShort(skuById(p.skuId)) + (p.status === 'en_curso' ? ' (en ' + STAGES[p.stage].toLowerCase() + ')' : ' (programada)'))))}. Cuando la finalices, las unidades se reservan solas.`,
+    add({ id: 'wait-prod', level: 'info', score: 40, icon: 'pot', title: 'Pedidos esperando producción', reason: `Quedan cubiertos con ${joinList(inProg.map(p => p.qty + ' × ' + skuShort(skuById(p.skuId))))}. Al finalizarla se reservan solos.`, todo: '',
       actions: [{ label: 'Ir a producción', act: 'go', arg: 'produccion', primary: true }] });
   }
   const pending = S.prodOrders.filter(p => p.status === 'programada' && p.date <= D);
-  if (pending.length && !needAll.length) out.push({ id: 'prog', level: 'hoy', score: 70, icon: 'pot', short: pl(pending.length, 'una orden de producción sin arrancar', pending.length + ' órdenes de producción sin arrancar'), ask: '¿Arrancamos con la producción?',
-    text: `Tenés ${pending.length === 1 ? 'una orden programada' : pending.length + ' órdenes programadas'} para hoy sin arrancar: ${esc(joinList(pending.map(p => p.qty + ' × ' + skuShort(skuById(p.skuId)))))}.`,
+  if (pending.length && !forOrders) add({ id: 'prog', level: 'hoy', score: 70, icon: 'pot', title: 'Arrancar la producción programada', reason: `${pending.length === 1 ? 'Hay una orden' : 'Hay ' + pending.length + ' órdenes'} para hoy sin empezar: ${joinList(pending.map(p => p.qty + ' × ' + skuShort(skuById(p.skuId))))}.`, todo: 'arrancar la producción programada',
     actions: [{ label: 'Ir a producción', act: 'go', arg: 'produccion', primary: true }] });
 
-  /* Envíos listos para pedir */
   const ready = today.filter(o => o.ship && o.ship.status === 'pendiente' && o.status === 'listo').sort((a, b) => a.slot.localeCompare(b.slot));
   if (ready.length) {
-    const soon = slotH(ready[0].slot) <= nowHour() + 1;
-    const o = ready[0], c = clientById(o.clientId);
-    out.push({ id: 'uber', level: soon ? 'urgente' : 'hoy', score: soon ? 92 : 85, icon: 'car', short: ready.length === 1 ? 'un pedido listo para pedir Uber' : ready.length + ' pedidos listos para pedir Uber', ask: '¿Empezamos por los envíos?',
-      text: ready.length === 1 ? `El pedido de ${B(fname(c))} ya está listo y sale a las ${slotStart(o.slot)}. Te preparé los datos para que puedas solicitar el ${o.delivery === 'uber' ? 'Uber' : 'envío'}.`
-        : `${ready.length} pedidos ya están listos para salir: ${esc(joinList(ready.map(x => fname(clientById(x.clientId)) + ' (' + slotStart(x.slot) + ')')))}. Te armé la hoja de ruta para pedir los Uber.`,
-      actions: ready.length === 1 ? [{ label: 'Copiar datos para Uber', act: 'copy-ship', arg: o.id, primary: true }, { label: 'Ir a envíos', act: 'go-ship', arg: o.id }]
-        : [{ label: 'Copiar hoja de ruta', act: 'gri-route', primary: true }, { label: 'Ir a envíos', act: 'go', arg: 'envios' }] });
+    const soon = slotH(ready[0].slot) <= nowHour() + 1, o = ready[0], via = o.delivery === 'uber' ? 'Uber' : 'envío';
+    add({ id: 'uber', level: soon ? 'urgente' : 'hoy', score: soon ? 92 : 85, icon: 'car',
+      title: ready.length === 1 ? `Solicitar ${via} para ${fname(clientById(o.clientId))}` : `Solicitar ${ready.length} envíos`,
+      reason: ready.length === 1 ? `Su pedido ya está listo y sale a las ${slotStart(o.slot)}. Te dejé los datos listos para copiar.` : `Ya están listos: ${joinList(ready.map(x => fname(clientById(x.clientId)) + ' (' + slotStart(x.slot) + ')'))}.`,
+      todo: ready.length === 1 ? `coordinar el ${via} de ${fname(clientById(o.clientId))}` : `coordinar ${ready.length} envíos`,
+      actions: [{ label: ready.length === 1 ? 'Gestionar envío' : 'Gestionar envíos', act: ready.length === 1 ? 'go-ship' : 'go', arg: ready.length === 1 ? o.id : 'envios', primary: true }] });
   }
 
-  /* Insumos */
-  const low = S.insumos.filter(i => i.stock < i.min);
-  const needIns = {}; for (const p of needAll) for (const k in p.sku.recipe) needIns[k] = (needIns[k] || 0) + p.sku.recipe[k] * p.need;
+  const needIns = {};
+  for (const p of plan) for (const k in p.sku.recipe) needIns[k] = (needIns[k] || 0) + p.sku.recipe[k] * p.need;
   for (const p of S.prodOrders.filter(p => p.status === 'programada' || p.status === 'en_curso')) { const s = skuById(p.skuId); for (const k in s.recipe) needIns[k] = (needIns[k] || 0) + s.recipe[k] * p.qty; }
   const blocking = S.insumos.filter(i => (needIns[i.id] || 0) > i.stock + 1e-9);
-  for (const i of blocking) out.push({ id: 'ins-block-' + i.id, level: 'urgente', score: 88, icon: 'bag', short: `no alcanza ${i.name.toLowerCase()}`, ask: '¿Registramos la compra?',
-    text: `Con lo que hay que producir no alcanza ${B(i.name.toLowerCase())}: necesitamos ${fmtN(needIns[i.id])} ${i.unit} y hay ${fmtN(i.stock)} ${i.unit}.`,
-    actions: [{ label: 'Registrar compra', act: 'ins-buy', arg: i.id, primary: true }] });
-  const lowOnly = low.filter(i => !blocking.includes(i));
-  if (lowOnly.length === 1) { const i = lowOnly[0]; out.push({ id: 'ins-' + i.id, level: 'hoy', score: 60, icon: 'bag', short: `${i.name.toLowerCase()} por debajo del mínimo`, ask: '',
-    text: `Nos estamos quedando sin ${B(i.name.toLowerCase())}. Tenemos ${fmtN(i.stock)} ${i.unit} y el mínimo configurado es ${fmtN(i.min)} ${i.unit}. Te recomiendo revisar si necesitamos comprar.`,
-    actions: [{ label: 'Registrar compra', act: 'ins-buy', arg: i.id, primary: true }, { label: 'Ver insumos', act: 'gri-ins' }] }); }
-  else if (lowOnly.length > 1) out.push({ id: 'ins-many', level: 'hoy', score: 60, icon: 'bag', short: 'insumos por debajo del mínimo', ask: '',
-    text: `Hay ${lowOnly.length} insumos por debajo del mínimo: ${esc(joinList(lowOnly.map(i => i.name.toLowerCase() + ' (' + fmtN(i.stock) + ' ' + i.unit + ')')))}. Te recomiendo armar la compra.`,
+  for (const i of blocking) add({ id: 'ins-block-' + i.id, level: 'urgente', score: 88, icon: 'bag', title: `Comprar ${i.name.toLowerCase()}`, reason: `Para la producción pendiente necesitamos ${fmtN(needIns[i.id])} ${i.unit} y hay ${fmtN(i.stock)} ${i.unit}.`, todo: `comprar ${i.name.toLowerCase()}`,
+    actions: [{ label: 'Ver cuánto comprar', act: 'gri-buy', arg: i.id, primary: true }] });
+  const low = S.insumos.filter(i => i.stock < i.min && !blocking.includes(i));
+  if (low.length === 1) { const i = low[0]; add({ id: 'ins-' + i.id, level: 'hoy', score: 60, icon: 'bag', title: `Revisar el stock de ${i.name.toLowerCase()}`, reason: `Nos estamos quedando sin ${i.name.toLowerCase()}: hay ${fmtN(i.stock)} ${i.unit} y el mínimo es ${fmtN(i.min)} ${i.unit}. ¿Revisamos cuánto comprar?`, todo: `revisar el stock de ${i.name.toLowerCase()}`,
+    actions: [{ label: 'Ver cuánto comprar', act: 'gri-buy', arg: i.id, primary: true }] }); }
+  else if (low.length > 1) add({ id: 'ins-many', level: 'hoy', score: 60, icon: 'bag', title: `Revisar ${low.length} insumos`, reason: `Están por debajo del mínimo: ${joinList(low.map(i => i.name.toLowerCase()))}.`, todo: 'revisar insumos que se están acabando',
     actions: [{ label: 'Ver insumos', act: 'gri-ins', primary: true }] });
 
-  /* Vencimientos */
   const expLots = S.lots.filter(l => l.qty > 0 && l.expires < D), expU = sum(expLots, l => l.qty);
-  if (expU) out.push({ id: 'expired', level: 'hoy', score: 55, icon: 'trash', short: `${expU} ${pl(expU, 'unidad vencida', 'unidades vencidas')}`, ask: '',
-    text: `Hay ${B(expU + ' ' + pl(expU, 'unidad vencida', 'unidades vencidas'))} (${esc(joinList(expLots.map(l => l.code)))}). No se usan en ningún pedido. ¿Las doy de baja para que el stock quede al día?`,
-    actions: [{ label: 'Dar de baja', act: 'gri-writeoff', primary: true }, { label: 'Ver lotes', act: 'go', arg: 'inventario' }] });
+  if (expU) add({ id: 'expired', level: 'hoy', score: 55, icon: 'trash', title: `Dar de baja ${expU} ${pl(expU, 'unidad vencida', 'unidades vencidas')}`, reason: `Son del lote ${joinList(expLots.map(l => l.code))}. No se usan en pedidos; darlas de baja deja el stock al día.`, todo: 'dar de baja lo vencido',
+    actions: [{ label: 'Dar de baja', act: 'gri-writeoff', primary: true }] });
+
+  const owedLate = S.orders.filter(o => balanceOf(o) > 0 && o.deliveryDate < D).sort((a, b) => balanceOf(b) - balanceOf(a));
+  if (owedLate.length) { const c = clientById(owedLate[0].clientId); add({ id: 'owed', level: 'hoy', score: 58, icon: 'wallet', title: `Cobrar ${money(sum(owedLate, balanceOf))} atrasados`, reason: `${fname(c)}${owedLate.length > 1 ? ` y ${owedLate.length - 1} ${pl(owedLate.length - 1, 'cliente más', 'clientes más')}` : ''} ${owedLate.length > 1 ? 'tienen' : 'tiene'} saldo de entregas anteriores.`, todo: 'ponernos al día con los cobros',
+    actions: [{ label: 'Ver cobros', act: 'go', arg: 'cobrar', primary: true }] }); }
+
   const soonLots = S.lots.filter(l => l.qty > 0 && lotState(l) === 'proximo');
   const soonFree = sum(soonLots, l => lotFree(l)), soonRes = sum(soonLots, l => lotReserved(l));
-  if (soonFree > 0) out.push({ id: 'soon', level: 'oportunidad', score: 50, icon: 'clock', short: `${soonFree} unidades por vencer`, ask: '',
-    text: `Tenés ${B(soonFree + ' ' + pl(soonFree, 'unidad', 'unidades'))} que vencen en los próximos días y no están reservadas (${esc(joinList(soonLots.filter(l => lotFree(l) > 0).map(l => lotFree(l) + ' × ' + skuShort(skuById(l.skuId)))))}). Podrías ofrecerlas con un topping de regalo antes de perderlas.`,
-    actions: [{ label: 'Copiar mensaje de promo', act: 'gri-promo', primary: true }, { label: 'Ver lotes', act: 'go', arg: 'inventario' }] });
-  else if (soonRes > 0) out.push({ id: 'soon-ok', level: 'info', score: 20, icon: 'clock', short: '',
-    text: `Las ${soonRes} unidades que vencen pronto ya están reservadas para pedidos de esta semana. Salen antes de vencer.`, actions: [{ label: 'Ver lotes', act: 'go', arg: 'inventario' }] });
-
-  /* Cobros */
-  const owedLate = S.orders.filter(o => balanceOf(o) > 0 && o.deliveryDate < D).sort((a, b) => balanceOf(b) - balanceOf(a));
-  if (owedLate.length) { const c = clientById(owedLate[0].clientId);
-    out.push({ id: 'owed', level: 'hoy', score: 58, icon: 'wallet', short: `${money(sum(owedLate, balanceOf))} por cobrar de días anteriores`, ask: '¿Revisamos los cobros?',
-      text: `${B(fname(c))}${owedLate.length > 1 ? ` y ${owedLate.length - 1} ${pl(owedLate.length - 1, 'cliente más', 'clientes más')}` : ''} te ${owedLate.length > 1 ? 'deben' : 'debe'} ${B(money(sum(owedLate, balanceOf)))} de entregas anteriores. ¿Revisamos los cobros?`,
-      actions: [{ label: 'Ver cobros', act: 'go', arg: 'cobrar', primary: true }] }); }
-  const cashToday = today.filter(o => balanceOf(o) > 0);
-  if (cashToday.length) out.push({ id: 'cash', level: 'info', score: 30, icon: 'cash', short: '',
-    text: `En las entregas de hoy quedan por cobrar ${B(money(sum(cashToday, balanceOf)))} en ${cashToday.length} ${pl(cashToday.length, 'pedido')}: ${money(sum(cashToday.filter(o => o.payMethod === 'efectivo'), balanceOf))} en efectivo y el resto por transferencia.`,
-    actions: [{ label: 'Ver cobros', act: 'go', arg: 'cobrar' }] });
-
-  /* Clientes */
+  if (soonFree > 0) add({ id: 'soon', level: 'semana', score: 50, icon: 'clock', title: `Ofrecer ${soonFree} ${pl(soonFree, 'unidad', 'unidades')} que vencen pronto`, reason: `No están reservadas y vencen en 3 días o menos. Un topping de regalo puede moverlas.`, todo: '',
+    actions: [{ label: 'Copiar promo', act: 'gri-promo', primary: true }] });
   computeVip();
   const reco = S.clients.map(c => ({ c, st: clientStats(c) })).filter(x => clientTags(x.c, x.st).includes('recompra')).sort((a, b) => b.st.total - a.st.total);
-  if (reco.length) out.push({ id: 'reco', level: 'oportunidad', score: 45, icon: 'users', short: '',
-    text: `${esc(joinList(reco.slice(0, 3).map(x => fname(x.c))))}${reco.length > 3 ? ` y ${reco.length - 3} más` : ''} ${reco.length === 1 ? 'suele' : 'suelen'} pedir por esta fecha y todavía no lo ${reco.length === 1 ? 'hizo' : 'hicieron'}. Un mensaje a tiempo puede traer el pedido de la semana.`,
-    actions: [{ label: 'Copiar mensaje para ' + fname(reco[0].c), act: 'copy-wa', arg: reco[0].c.id, primary: true }, { label: 'Ver clientes', act: 'cli-tag', arg: 'recompra' }] });
+  if (reco.length) add({ id: 'reco', level: 'semana', score: 45, icon: 'users', title: `Escribirle a ${reco.length} ${pl(reco.length, 'cliente')} que ${pl(reco.length, 'suele', 'suelen')} reponer`, reason: `${joinList(reco.slice(0, 3).map(x => fname(x.c)))}${reco.length > 3 ? ' y otros' : ''} ya pasaron su tiempo habitual entre compras.`, todo: '',
+    actions: [{ label: 'Copiar mensaje', act: 'copy-wa', arg: reco[0].c.id, primary: true }, { label: 'Ver clientes', act: 'cli-tag', arg: 'recompra' }] });
 
-  /* Mañana y envíos en curso */
+  const cashToday = today.filter(o => balanceOf(o) > 0);
+  if (cashToday.length) add({ id: 'cash', level: 'info', score: 30, icon: 'cash', title: `Cobrar ${money(sum(cashToday, balanceOf))} en las entregas de hoy`, reason: `${cashToday.length} ${pl(cashToday.length, 'pedido')}: ${money(sum(cashToday.filter(o => o.payMethod === 'efectivo'), balanceOf))} en efectivo, el resto por transferencia.`, todo: '',
+    actions: [{ label: 'Ver cobros', act: 'go', arg: 'cobrar', primary: true }] });
   const tom = open.filter(o => o.deliveryDate === addDays(D, 1));
-  if (tom.length) out.push({ id: 'tomorrow', level: 'info', score: 25, icon: 'calendar', short: '',
-    text: `Mañana tenés ${tom.length} ${pl(tom.length, 'pedido')} para entregar por ${money(sum(tom, o => o.total))}${tom.some(o => !fullyReserved(o)) ? `. ${tom.filter(o => !fullyReserved(o)).length} todavía esperan producción` : ', con todo el stock reservado'}.`,
-    actions: [{ label: 'Ver pedidos de mañana', act: 'gri-tomorrow' }] });
-  const moving = today.filter(o => o.ship && (o.ship.status === 'solicitado' || o.ship.status === 'en_camino'));
-  if (moving.length) out.push({ id: 'moving', level: 'info', score: 22, icon: 'truck', short: '',
-    text: `Envíos en curso: ${esc(joinList(moving.map(o => fname(clientById(o.clientId)) + (o.ship.status === 'en_camino' ? ' (en camino)' : ' (esperando al conductor)'))))}. Cuando entreguen, marcalo en Envíos.`,
-    actions: [{ label: 'Ver envíos', act: 'go', arg: 'envios' }] });
+  if (tom.length) add({ id: 'tomorrow', level: 'info', score: 25, icon: 'calendar', title: `Mañana: ${tom.length} ${pl(tom.length, 'pedido')}`, reason: tom.some(o => !fullyReserved(o)) ? `${tom.filter(o => !fullyReserved(o)).length} todavía esperan producción.` : 'Todo el stock ya está reservado.', todo: '',
+    actions: [{ label: 'Ver pedidos de mañana', act: 'gri-tomorrow', primary: true }] });
+  if (soonRes > 0 && !soonFree) add({ id: 'soon-ok', level: 'info', score: 20, icon: 'clock', title: 'Lo que vence pronto ya está reservado', reason: `Las ${soonRes} unidades salen en pedidos antes de vencer.`, todo: '', actions: [{ label: 'Ver lotes', act: 'go', arg: 'inventario', primary: true }] });
 
-  return out.sort((a, b) => LEVELS[a.level].rank - LEVELS[b.level].rank || b.score - a.score);
+  return out.map(r => Object.assign(r, { text: r.title + '. ' + r.reason })).sort((a, b) => LEVELS[a.level].rank - LEVELS[b.level].rank || b.score - a.score);
 }
 
-/* ---------- Resumen de bienvenida ---------- */
+/* ---------- Resumen de bienvenida (sin repetir las cifras de las tarjetas) ---------- */
 function griSummary(recs) {
   const D = TODAY(), LW = addDays(D, -7), dn = DIAS[weekday(D)];
-  const tod = S.orders.filter(o => !o.cancelled && o.createdAt === D), lw = S.orders.filter(o => !o.cancelled && o.createdAt === LW);
-  const sales = sum(tod, o => o.total), prev = sum(lw, o => o.total);
-  let p1;
-  if (!sales) p1 = 'Todavía no entró ninguna venta hoy.';
-  else if (!prev) p1 = `Ya vendiste ${B(money(sales))} en ${tod.length} ${pl(tod.length, 'pedido')}.`;
-  else {
-    const r = (sales - prev) / prev, pc = Math.abs(Math.round(r * 100));
-    p1 = r >= .1 ? `Hoy venimos muy bien. Ya vendiste ${B(money(sales))}, un ${pc}% más que el ${dn} pasado.`
-      : r <= -.1 ? `Ya vendiste ${B(money(sales))}, un ${pc}% menos que el ${dn} pasado. Todavía queda día.`
-        : `Ya vendiste ${B(money(sales))}, parecido al ${dn} pasado.`;
-  }
-  const top = recs.filter(r => (r.level === 'urgente' || r.level === 'hoy') && r.short);
+  const sales = sum(S.orders.filter(o => !o.cancelled && o.createdAt === D), o => o.total), prev = sum(S.orders.filter(o => !o.cancelled && o.createdAt === LW), o => o.total);
+  const top = recs.filter(r => (r.level === 'urgente' || r.level === 'hoy') && r.todo);
+  const words = ['', 'una cosa importante', 'dos cosas importantes', 'tres cosas importantes'];
+  let p1 = '';
+  if (top.length) {
+    const shown = top.slice(0, 3).map(r => r.todo);
+    p1 = top.length <= 3 ? `Hoy tenemos ${words[top.length]} para resolver: ${esc(joinList(shown))}.` : `Hoy tenemos ${top.length} cosas para resolver. Las más importantes: ${esc(joinList(shown))}.`;
+  } else p1 = 'No hay nada urgente: lo de hoy está encaminado.';
   let p2 = '';
-  if (top.length) p2 = ` Tenés ${top.length === 1 ? 'un pendiente importante' : 'algunos pendientes importantes'}: ${esc(joinList(top.slice(0, 3).map(r => r.short)))}.`;
-  const ask = top.find(r => r.ask);
-  const p3 = top.length ? (ask ? ' ' + ask.ask : '') : ' No hay nada urgente. Si querés, miramos oportunidades para vender más.';
-  return p1 + p2 + p3;
+  if (!sales) p2 = ' Todavía no entraron ventas hoy.';
+  else if (prev) { const r = (sales - prev) / prev; p2 = r >= .1 ? ` Las ventas vienen muy bien respecto del ${dn} pasado.` : r <= -.1 ? ` Las ventas vienen más tranquilas que el ${dn} pasado.` : ` Las ventas vienen parecidas al ${dn} pasado.`; }
+  return p1 + p2;
 }
 
 /* ---------- Contexto estructurado para una futura IA ---------- */
@@ -199,7 +165,25 @@ function griPeriod(q) {
 const cmpTxt = (cur, prev, label) => !prev ? '' : (() => { const r = (cur - prev) / prev; return Math.abs(r) < .05 ? ` Muy parecido a ${label}.` : ` Es un ${Math.abs(Math.round(r * 100))}% ${r > 0 ? 'más' : 'menos'} que ${label}.`; })();
 
 const GRI_INTENTS = [
-  { id: 'ayuda', match: /^(hola|buen|que (podes|sabes)|ayuda|como funciona)/, run: () => ({ html: `Hola, ${esc(S.config.user)}. Puedo contarte cómo vienen las ventas y la ganancia, qué productos te dejan más, qué pedidos faltan entregar, qué hay que producir, cuántos envíos quedan, qué vence pronto, quién te debe y qué clientes hace tiempo que no compran. Todo sale de los datos del sistema.` }) },
+  { id: 'explicar', match: /(que es|que son|que significa|que quiere decir|como (se )?calcul|como funciona|para que sirve|explica|no entiendo)/, run: q => {
+    const T = [
+      [/margen|ganancia/, 'La <b>ganancia bruta</b> es lo que queda de cada venta después de restar ingredientes, envase, etiqueta y elaboración. El <b>margen</b> es esa ganancia dividida por el precio. No descuenta gastos fijos como alquiler, sueldos o impuestos, así que no es la ganancia final del mes.'],
+      [/ticket/, 'El <b>ticket promedio</b> es lo que gasta en promedio cada pedido: total vendido dividido por la cantidad de pedidos.'],
+      [/factur/, 'La <b>facturación</b> es el total vendido en el período, con descuentos aplicados. Podés contarla por fecha de pedido, de entrega o de cobro.'],
+      [/reserv/, 'Un producto <b>reservado</b> ya está apartado para un pedido. El sistema lo reserva solo apenas cargás el pedido, del lote que vence primero, y deja de ofrecerlo como disponible.'],
+      [/disponible/, '<b>Disponible para vender</b> son las unidades que no están reservadas para ningún pedido y no vencieron. Son las que podés ofrecer ya.'],
+      [/minimo/, 'El <b>stock mínimo</b> es la cantidad que querés tener siempre de cada producto. Si quedás por debajo, te sugiero producir la diferencia como reposición, aparte de los pedidos.'],
+      [/lote|venc/, 'Cada producción genera un <b>lote</b> con su fecha de elaboración y vencimiento, según la vida útil configurada para el producto. Lo vencido nunca se asigna a un pedido.'],
+      [/sena|parcial|cobr/, 'Una <b>seña</b> o pago parcial es una parte del total. El pedido queda con saldo hasta que entra el resto. Cobrar y entregar van por separado: un pedido puede estar pagado y sin entregar, o al revés.'],
+      [/produc|fabric/, 'Para saber <b>qué producir</b> sumo los pedidos confirmados, resto lo que ya está reservado del stock y lo que ya está en producción. Lo que queda es lo que falta. La reposición para tu stock mínimo va aparte.'],
+      [/envio|uber|transporte/, 'Cada envío tiene <b>tres estados separados</b>: el producto (si está listo), el viaje (sin solicitar, conductor asignado, en camino, entregado) y el cobro. Pedir un Uber nunca marca el pedido como entregado.'],
+      [/recompra|inactiv/, 'Para cada cliente calculo cada cuántos días suele comprar. Si ya pasó ese tiempo sin un pedido nuevo, lo marco como <b>posible recompra</b>. Si pasó mucho más, como <b>inactivo</b>.'],
+    ];
+    const t = T.find(([re]) => re.test(q));
+    if (t) return { html: t[1] };
+    return { html: `${esc(S.config.brand)} organiza el día en cuatro pasos: cargás el pedido, el sistema reserva el stock o te dice qué producir, coordinás el envío y registrás el cobro. Todo queda conectado. Si querés, te muestro el recorrido guiado.`, actions: [{ label: 'Ver recorrido', act: 'tour', primary: true }, { label: 'Primeros pasos', act: 'go', arg: 'bienvenida' }] };
+  } },
+  { id: 'ayuda', match: /^(hola|buen|que (podes|sabes)|ayuda|como funciona)/, run: () => ({ html: `Hola. Puedo contarte cómo vienen las ventas y la ganancia, qué productos te dejan más, qué pedidos faltan entregar, qué hay que producir, cuántos envíos quedan, qué vence pronto, quién te debe y qué clientes hace tiempo que no compran. Todo sale de los datos del sistema.` }) },
   { id: 'ganancia', match: /(gan[eéa]|ganancia|margen|utilidad)(?!.*rentab)/, run: q => {
     if (/producto|rentab|cual/.test(q) && !/cuanto/.test(q)) return GRI_INTENTS.find(i => i.id === 'rentables').run(q);
     const P = griPeriod(q), rows = salesIn(P.a, P.b, 'pedido'), t = sum(rows, r => r.total), g = sum(rows, r => r.profit);
@@ -268,24 +252,22 @@ const GRI_INTENTS = [
     return { html: `Disponible para vender: ${esc(joinList(free.map(x => x.k.free + ' × ' + skuShort(x.s))))}. ${low.length ? 'Insumos bajo el mínimo: ' + esc(joinList(low.map(i => i.name.toLowerCase()))) + '.' : 'Los insumos están por encima del mínimo.'}`, actions: [{ label: 'Ver inventario', act: 'go', arg: 'inventario' }] };
   } },
 ];
-const GRI_SUGGEST = ['¿Cuánto vendí hoy?', '¿Cuánto gané esta semana?', '¿Cuáles son mis productos más rentables?', '¿Qué pedidos faltan entregar?', '¿Qué necesito producir mañana?', '¿Cuántos Uber tengo pendientes?', '¿Qué productos están próximos a vencer?', '¿Qué clientes hace tiempo que no compran?'];
+const GRI_SUGGEST = ['¿Cuánto vendí hoy?', '¿Qué es el margen bruto?', '¿Cuánto gané esta semana?', '¿Cuáles son mis productos más rentables?', '¿Qué pedidos faltan entregar?', '¿Qué necesito producir mañana?', '¿Cuántos Uber tengo pendientes?', '¿Qué productos están próximos a vencer?', '¿Qué clientes hace tiempo que no compran?'];
 const GRI_ENGINE = {
   provider: 'local',
   ask(text) {
     const q = norm(text).trim();
     if (!q) return null;
     const it = GRI_INTENTS.find(i => i.match.test(q));
-    if (!it) return { html: `Eso todavía no lo sé responder, ${esc(S.config.user)}. Por ahora puedo ayudarte con ventas, ganancia, productos rentables, pedidos, producción, envíos, vencimientos, cobros, stock y clientes.`, unknown: true };
+    if (!it) return { html: `Eso todavía no lo sé responder. Por ahora puedo ayudarte con ventas, ganancia, productos rentables, pedidos, producción, envíos, vencimientos, cobros, stock y clientes, y explicarte cómo funciona el sistema.`, unknown: true };
     try { return it.run(q); } catch (e) { console.error(e); return { html: 'No pude calcular eso ahora. Probá de nuevo o revisalo en el módulo correspondiente.' }; }
   },
 };
 
 /* ---------- Vista de Inicio ---------- */
-const griAvatar = (cls) => `<span class="gri-av ${cls || ''}" aria-hidden="true">G</span>`;
-function recHtml(r) {
-  const L = LEVELS[r.level];
-  return `<div class="rec rec-${L.tone}"><span class="rec-ico">${ic(r.icon)}</span><div class="rec-body"><span class="rec-level">${L.label}</span><p>${r.text}</p>
-    <div class="rec-acts">${r.actions.map(a => `<button class="btn sm ${a.primary ? 'primary' : ''}" data-act="${a.act}" ${a.arg ? `data-arg="${esc(a.arg)}"` : ''}>${esc(a.label)}</button>`).join('')}</div></div></div>`;
+function attRow(r) {
+  const L = LEVELS[r.level], a = r.actions[0];
+  return `<div class="att lv-${L.tone}"><span class="att-ico">${ic(r.icon)}</span><div class="att-main"><b>${esc(r.title)}</b><span>${esc(r.reason)}</span></div><span class="lvl lvl-${L.tone}">${L.label}</span><button class="btn sm ${a.primary ? 'primary' : ''}" data-act="${a.act}" ${a.arg ? `data-arg="${esc(a.arg)}"` : ''}>${esc(a.label)}</button></div>`;
 }
 function vInicio() {
   const D = TODAY(), LW = addDays(D, -7), dname = DIAS[weekday(D)];
@@ -294,81 +276,64 @@ function vInicio() {
   const tod = created(D), lw = created(LW);
   const sales = sum(tod, o => o.total), salesLW = sum(lw, o => o.total), profit = sum(tod, profitOf);
   const delivT = valid.filter(o => o.deliveryDate === D), delivLW = valid.filter(o => o.deliveryDate === LW);
-  const toMake = valid.filter(o => isOpen(o) && (o.status === 'por_elaborar' || o.status === 'en_produccion') && o.deliveryDate <= addDays(D, 1));
-  const toMakeToday = toMake.filter(o => o.deliveryDate <= D).length;
-  const shipsT = delivT.filter(o => o.ship), shipsDone = shipsT.filter(o => o.ship.status === 'entregado').length;
+  const shipsT = delivT.filter(o => o.ship), shipsLeft = shipsT.filter(o => o.ship.status !== 'entregado');
   const owedOrders = valid.filter(o => balanceOf(o) > 0), owed = sum(owedOrders, balanceOf);
   const stocks = S.skus.map(s => skuStock(s.id));
-  const free = sum(stocks, s => s.free), reserved = sum(stocks, s => s.reserved), soon = sum(stocks, s => s.soon);
-  const soonLots = S.lots.filter(l => lotState(l) === 'proximo').length;
+  const free = sum(stocks, s => s.free), reserved = sum(stocks, s => s.reserved), soon = sum(stocks, s => s.soon), expired = sum(stocks, s => s.expired);
   const h = new Date().getHours();
   const greet = h < 13 ? '¡Buen día' : h < 20 ? '¡Buenas tardes' : '¡Buenas noches';
   const emoji = h < 13 ? '☀️' : h < 20 ? '🧡' : '🌙';
-
   const recs = griRecs();
-  const main = recs.filter(r => r.level === 'urgente' || r.level === 'hoy');
-  const rest = recs.filter(r => r.level === 'oportunidad' || r.level === 'info');
-  const shownMain = U.gri.allMain ? main : main.slice(0, 3);
-  const quick = recs.slice(0, 2).map(r => r.actions.find(a => a.primary) || r.actions[0]).filter(Boolean);
+  const shown = U.gri.allMain ? recs : recs.slice(0, 3);
+  const firstAct = recs[0] && recs[0].actions[0];
 
-  /* Producción de hoy */
   const pos = S.prodOrders.filter(p => p.date === D && p.status !== 'cancelada');
-  const plan = productionPlan().filter(p => p.need > 0);
+  const plan = productionPlan().filter(p => p.forOrders > 0);
   const unplanned = plan.filter(p => !pos.some(x => x.skuId === p.sku.id && x.status !== 'finalizada'));
   const prodRows = pos.map(p => {
     const sku = skuById(p.skuId), fin = p.status === 'finalizada', cur = p.status === 'en_curso';
     const pr = fin ? 1 : cur ? (p.stage + 1) / (STAGES.length + 1) : 0;
-    return `<div class="row"><span>${jar(sku.flavor, 36)}</span><div class="row-main"><div class="row-title">${esc(sku.name)}</div><div class="row-sub">${fin ? (p.realQty || p.qty) + ' unidades listas' : cur ? STAGES[p.stage] + ' · ' + p.qty + ' unidades' : 'Programada · ' + p.qty + ' unidades'}</div><div class="prog ${fin ? 'good' : cur ? 'terra' : ''}" style="margin-top:7px"><i style="width:${Math.round(pr * 100)}%"></i></div></div><div class="row-end">${fin ? '<span class="chip good">Lista</span>' : cur ? '<span class="chip warn">En curso</span>' : '<span class="chip">Programada</span>'}</div></div>`;
-  }).join('') + unplanned.map(p => `<div class="row"><span>${jar(p.sku.flavor, 36)}</span><div class="row-main"><div class="row-title">${esc(p.sku.name)}</div><div class="row-sub">Faltan ${p.need}: ${p.forOrders} para pedidos, ${p.forStock} para stock</div><div class="prog" style="margin-top:7px"><i style="width:0"></i></div></div><div class="row-end"><button class="btn sm soft" data-act="po-new" data-arg="${p.sku.id}" data-qty="${p.need}">Programar</button></div></div>`).join('');
-  const doneU = sum(pos.filter(p => p.status === 'finalizada'), p => p.realQty || p.qty);
-  const totalU = doneU + sum(pos.filter(p => p.status === 'en_curso' || p.status === 'programada'), p => p.qty) + sum(unplanned, p => p.need);
+    return `<div class="row"><span>${jar(sku.flavor, 34)}</span><div class="row-main"><div class="row-title">${esc(sku.name)}</div><div class="row-sub">${fin ? (p.realQty || p.qty) + ' unidades listas' : cur ? STAGES[p.stage] + ' · ' + p.qty + ' unidades' : 'Programada · ' + p.qty + ' unidades'}</div><div class="prog ${fin ? 'good' : cur ? 'terra' : ''}" style="margin-top:7px"><i style="width:${Math.round(pr * 100)}%"></i></div></div><div class="row-end">${fin ? '<span class="chip good">Lista</span>' : cur ? '<span class="chip warn">En curso</span>' : '<span class="chip">Programada</span>'}</div></div>`;
+  }).join('') + unplanned.map(p => `<div class="row"><span>${jar(p.sku.flavor, 34)}</span><div class="row-main"><div class="row-title">${esc(p.sku.name)}</div><div class="row-sub">Faltan ${p.forOrders} para pedidos</div><div class="prog" style="margin-top:7px"><i style="width:0"></i></div></div><div class="row-end"><button class="btn sm soft" data-act="po-new" data-arg="${p.sku.id}" data-qty="${p.forOrders}">Programar</button></div></div>`).join('');
 
   const next = valid.filter(o => o.deliveryDate === D && o.status !== 'entregado' && o.ship).sort((a, b) => a.slot.localeCompare(b.slot));
-  const nextRows = next.slice(0, 5).map(o => `<div class="row click" data-act="order" data-arg="${o.id}"><span class="time-tag">${slotStart(o.slot)}</span><div class="row-main"><div class="row-title">${esc(clientById(o.clientId).name)} <span class="faint" style="font-weight:600">#${o.number}</span></div><div class="row-sub">${esc(orderAddr(o).barrio)} · ${esc(itemsText(o))}</div></div><div class="row-end">${shipChip(o)}</div></div>`).join('');
+  const nextRows = next.slice(0, 5).map(o => `<button class="ship-row" data-act="order" data-arg="${o.id}"><span class="sr-time">${ic('truck', 'sm')}${slotStart(o.slot)}</span><span class="sr-main"><b>${esc(clientById(o.clientId).name)}</b><small>${esc(orderAddr(o).barrio)} · #${o.number}</small></span><span class="sr-pill">${shipPill(o)}</span>${ic('chev', 'sm sr-chev')}</button>`).join('');
 
   const days = [];
   for (let i = 6; i >= 0; i--) { const d = addDays(D, -i); const os = created(d); days.push({ label: DIAS_C[weekday(d)] + ' ' + new Date(toT(d)).getUTCDate(), v: sum(os, o => o.total), cls: i === 0 ? 'today' : '', tip: fmtLong(d) + ' · ' + money(sum(os, o => o.total)) + ' · ' + os.length + ' pedidos', arg: d }); }
   const wk = sum(days, d => d.v), prevWk = sum(Array.from({ length: 7 }, (_, i) => sum(created(addDays(D, -7 - i)), o => o.total)));
 
   return `<div class="wrap">
-  <div class="grid g-welcome">
-    <section class="card gri-welcome" aria-label="Resumen de Gri">
-      <div class="gw-head">${griAvatar('lg')}<div><div class="eyebrow">Gri · tu asistente en ${esc(S.config.brand)}</div><div class="faint" style="font-size:12.5px">${fmtLong(D)}</div></div></div>
+  <section class="card gri-hello" aria-label="Resumen de Gri">
+    <div class="gh-mascot">${griMascot(104)}</div>
+    <div class="gh-main"><div class="eyebrow">Gri · tu asistente · ${fmtLong(D)}</div>
       <h1 class="gw-title">${greet}, ${esc(S.config.user)}! ${emoji}</h1>
       <p class="gw-text">${griSummary(recs)}</p>
-      <div class="chips gw-acts">${quick.map((a, i) => `<button class="btn ${i === 0 ? 'primary' : ''}" data-act="${a.act}" ${a.arg ? `data-arg="${esc(a.arg)}"` : ''}>${esc(a.label)}</button>`).join('')}<button class="btn ghost" data-act="gri-open">${ic('msg', 'sm')}Preguntale a Gri</button></div>
-    </section>
-    <section class="card hero hero-c" aria-label="Ventas de hoy">
-      <div class="eyebrow">Vendiste hoy</div>
-      <div class="k-val num">${money(sales)}</div>
-      <div class="k-sub">${delta(sales, salesLW, 'vs. el ' + dname + ' pasado')}</div>
-      <div class="hero-mini"><div><b class="num">${money(profit)}</b><span>Ganancia bruta · ${pctTxt(sales ? profit / sales : 0)}</span></div><div><b class="num">${tod.length}</b><span>Pedidos tomados</span></div><div><b class="num">${money(tod.length ? sales / tod.length : 0)}</b><span>Ticket promedio</span></div></div>
-      <div class="hero-actions"><button class="btn primary sm" data-act="new-order">${ic('plus', 'sm')}Nuevo pedido</button><button class="btn sm" data-act="go" data-arg="ventas">Ver ventas</button></div>
-    </section>
+      <div class="chips gw-acts">${firstAct ? `<button class="btn primary" data-act="${firstAct.act}" ${firstAct.arg ? `data-arg="${esc(firstAct.arg)}"` : ''}>${esc(firstAct.label)}</button>` : ''}<button class="btn" data-act="gri-open">${ic('msg', 'sm')}Preguntale a Gri</button></div></div>
+  </section>
+  <div class="grid g-kpi">
+    ${kpi({ icon: 'chart', label: 'Vendiste hoy', value: money(sales), sub: delta(sales, salesLW, 'vs. ' + dname + ' pasado'), bg: 'orange', go: 'ventas', small: true, help: 'Suma de los pedidos que tomaste hoy, con descuentos aplicados.' })}
+    ${kpi({ icon: 'leaf', label: 'Ganancia bruta', value: money(profit), sub: 'margen ' + pctTxt(sales ? profit / sales : 0), bg: 'sage', go: 'ventas', small: true, help: 'Lo que queda después de restar ingredientes, envase, etiqueta y elaboración. No descuenta gastos fijos como alquiler o sueldos.' })}
+    ${kpi({ icon: 'orders', label: 'Pedidos de hoy', value: delivT.length, sub: delta(delivT.length, delivLW.length, 'vs. ' + dname + ' pasado'), go: 'pedidos' })}
+    ${kpi({ icon: 'truck', label: 'Envíos pendientes', value: shipsLeft.length, sub: (shipsT.length - shipsLeft.length) + ' ya entregados hoy', bg: 'blue', go: 'envios' })}
+    ${kpi({ icon: 'wallet', label: 'Cobros pendientes', value: money(owed), sub: owedOrders.length + ' pedidos con saldo', bg: 'amber', go: 'cobrar', small: true })}
+    ${kpi({ icon: 'boxes', label: 'Disponible para vender', value: free, sub: reserved + ' reservados para pedidos', bg: 'green', go: 'inventario', help: 'Unidades sin reservar y sin vencer: las podés ofrecer ya.' })}
+    ${kpi({ icon: 'clock', label: 'Próximos a vencer', value: soon, sub: soon ? 'vencen en 3 días o menos' : 'Nada por vencer', bg: 'amber', go: 'inventario' })}
+    ${kpi({ icon: 'x', label: 'Vencidos', value: expired, sub: expired ? 'para dar de baja' : 'Nada vencido', bg: expired ? 'red' : 'cream', go: 'inventario' })}
   </div>
   <div class="grid g-main">
-    <section class="card">
-      <div class="sec-title"><h2>Lo que necesita tu atención</h2>${main.length ? `<span class="hint">${main.length} ${pl(main.length, 'pendiente')}</span>` : ''}</div>
-      <div class="recs">${shownMain.map(recHtml).join('') || `<div class="empty">Nada urgente por ahora, ${esc(S.config.user)}. Todo lo de hoy está encaminado.</div>`}</div>
-      ${main.length > 3 ? `<button class="btn ghost sm" data-act="gri-more-main" style="margin-top:8px">${U.gri.allMain ? 'Mostrar menos' : 'Ver ' + (main.length - 3) + ' más'}</button>` : ''}
-      ${rest.length ? `<div class="rec-rest"><button class="rest-toggle" data-act="gri-more" aria-expanded="${U.gri.more}">${ic(U.gri.more ? 'down' : 'chev', 'sm')}${rest.filter(r => r.level === 'oportunidad').length} ${pl(rest.filter(r => r.level === 'oportunidad').length, 'oportunidad', 'oportunidades')} y ${rest.filter(r => r.level === 'info').length} ${pl(rest.filter(r => r.level === 'info').length, 'novedad', 'novedades')}</button>${U.gri.more ? `<div class="recs">${rest.map(recHtml).join('')}</div>` : ''}</div>` : ''}
+    <section class="card att-card">
+      <div class="sec-title"><h2>Lo que necesita tu atención</h2>${recs.length > 3 ? `<button class="link" data-act="gri-more-main">${U.gri.allMain ? 'Ver menos' : 'Ver todas (' + recs.length + ')'}</button>` : ''}</div>
+      <div class="att-list">${shown.map(attRow).join('') || `<div class="empty">Nada pendiente por ahora. Todo lo de hoy está encaminado.</div>`}</div>
     </section>
-    <section class="card">
-      <div class="sec-title"><h2>Próximos envíos</h2><a class="link" href="#envios">Hoja de ruta ${ic('chev', 'sm')}</a></div>
-      <div class="rows">${nextRows || emptyBox('No quedan envíos para hoy.')}</div>
+    <section class="card env-card">
+      <div class="sec-title"><h2>Próximos envíos</h2><a class="link" href="#envios">Hoja de entregas ${ic('chev', 'sm')}</a></div>
+      <div class="ship-rows">${nextRows || emptyBox('No quedan envíos para hoy.')}</div>
     </section>
-  </div>
-  <div class="grid g-kpi6">
-    ${kpi({ icon: 'orders', label: 'Pedidos de hoy', value: delivT.length, sub: delta(delivT.length, delivLW.length, 'vs. ' + dname + ' pasado'), go: 'pedidos' })}
-    ${kpi({ icon: 'pot', label: 'Por elaborar', value: toMake.length, sub: toMakeToday + ' para hoy · ' + (toMake.length - toMakeToday) + ' para mañana', tone: 'terra', go: 'produccion' })}
-    ${kpi({ icon: 'truck', label: 'Envíos de hoy', value: shipsT.length, sub: shipsDone + ' entregados · ' + (shipsT.length - shipsDone) + ' por salir', tone: 'info', go: 'envios' })}
-    ${kpi({ icon: 'wallet', label: 'Cobros pendientes', value: money(owed), sub: owedOrders.length + ' pedidos con saldo', tone: 'bad', go: 'cobrar', small: true })}
-    ${kpi({ icon: 'boxes', label: 'Productos disponibles', value: free, sub: reserved + ' reservados para pedidos', go: 'inventario' })}
-    ${kpi({ icon: 'clock', label: 'Próximos a vencer', value: soon, sub: soon ? 'en ' + soonLots + ' ' + pl(soonLots, 'lote') + ' · 3 días o menos' : 'Nada por vencer', tone: 'warn', go: 'inventario' })}
   </div>
   <div class="grid g2">
-    <section class="card"><div class="sec-title"><h2>Producción de hoy</h2><a class="link" href="#produccion">${doneU} de ${totalU} unidades ${ic('chev', 'sm')}</a></div><div class="rows">${prodRows || emptyBox('No hay producción para hoy.')}</div></section>
-    <section class="card"><div class="sec-title"><div><h2>Últimos 7 días</h2><div class="k-sub" style="margin-top:4px"><b class="num" style="color:var(--ink)">${money(wk)}</b> ${delta(wk, prevWk, 'vs. 7 días anteriores')}</div></div><a class="link" href="#ventas">Ventas ${ic('chev', 'sm')}</a></div>${barChart(days, { act: 'day-sales', label: 'Ventas de los últimos 7 días', w: 640, h: 260 })}</section>
+    <section class="card"><div class="sec-title"><h2>Producción de hoy</h2><a class="link" href="#produccion">Ver producción ${ic('chev', 'sm')}</a></div><div class="rows">${prodRows || emptyBox('No hay producción para hoy.')}</div></section>
+    <section class="card"><div class="sec-title"><div><h2>Últimos 7 días</h2><div class="k-sub" style="margin-top:4px"><b class="num" style="color:var(--ink)">${money(wk)}</b> ${delta(wk, prevWk, 'vs. 7 días anteriores')}</div></div><a class="link" href="#ventas">Ventas ${ic('chev', 'sm')}</a></div>${barChart(days, { act: 'day-sales', label: 'Ventas de los últimos 7 días', w: 600, h: 250 })}</section>
   </div>
   </div>`;
 }
@@ -376,19 +341,19 @@ function vInicio() {
 /* ---------- Panel de chat ---------- */
 function griPanelHtml() {
   const msgs = U.gri.msgs;
-  return `<div class="gp-head">${griAvatar()}<div style="min-width:0"><b>Gri</b><small>Responde con los datos de ${esc(S.config.brand)}</small></div><button class="btn icon sm ghost" data-act="gri-clear" aria-label="Limpiar conversación" title="Limpiar">${ic('refresh', 'sm')}</button><button class="btn icon sm ghost" data-act="gri-close" aria-label="Cerrar">${ic('x', 'sm')}</button></div>
+  return `<div class="gp-head">${griAvatar('md')}<div style="min-width:0"><b>Gri</b><small>Responde con los datos de ${esc(S.config.brand)}</small></div><button class="btn icon sm ghost" data-act="gri-clear" aria-label="Limpiar conversación" title="Limpiar">${ic('refresh', 'sm')}</button><button class="btn icon sm ghost" data-act="gri-close" aria-label="Cerrar">${ic('x', 'sm')}</button></div>
   <div class="gp-msgs" id="gp-msgs">
-    <div class="msg gri">${griAvatar('sm')}<div class="bubble">Hola, ${esc(S.config.user)}. Preguntame lo que necesites del negocio. Respondo con lo que está cargado en el sistema.</div></div>
+    <div class="msg gri">${griAvatar('sm')}<div class="bubble">Hola. Preguntame lo que necesites del negocio o de cómo funciona el sistema. Respondo con lo que está cargado.</div></div>
     ${msgs.map(m => m.from === 'me' ? `<div class="msg me"><div class="bubble">${esc(m.text)}</div></div>` : `<div class="msg gri">${griAvatar('sm')}<div class="bubble ${m.unknown ? 'unknown' : ''}">${m.html}${m.actions && m.actions.length ? `<div class="rec-acts">${m.actions.map(a => `<button class="btn sm ${a.primary ? 'primary' : ''}" data-act="${a.act}" ${a.arg ? `data-arg="${esc(a.arg)}"` : ''}>${esc(a.label)}</button>`).join('')}</div>` : ''}<time>${m.time}</time></div></div>`).join('')}
   </div>
   <div class="gp-sugg">${GRI_SUGGEST.filter(s => !msgs.some(m => m.text === s)).slice(0, 4).map(s => `<button class="chip-btn" data-act="gri-ask" data-arg="${esc(s)}">${esc(s)}</button>`).join('')}</div>
   <form class="gp-form" id="gri-form"><input id="gri-in" class="input" placeholder="Escribile a Gri…" autocomplete="off" aria-label="Pregunta para Gri"><button class="btn primary icon" type="submit" aria-label="Enviar">${ic('chev')}</button></form>
-  <p class="gp-note">Versión demo: respuestas calculadas con reglas sobre tus datos. No usa inteligencia artificial todavía.</p>`;
+  <p class="gp-note">Versión demo: respuestas calculadas con reglas sobre tus datos. Todavía no usa inteligencia artificial.</p>`;
 }
 function griRenderPanel() {
   const p = $('#gri-panel');
-  if (!U.gri.open) { p.hidden = true; $('#gri-fab').hidden = false; return; }
-  p.hidden = false; $('#gri-fab').hidden = true;
+  if (!U.gri.open) { p.hidden = true; return; }
+  p.hidden = false;
   p.innerHTML = griPanelHtml();
   const box = $('#gp-msgs'); box.scrollTop = box.scrollHeight;
 }
@@ -401,23 +366,47 @@ function griAsk(text) {
   const inp = $('#gri-in'); if (inp && innerWidth > 1023) inp.focus();
 }
 
-/* ---------- Lista de producción ---------- */
-function openProdList() {
-  const plan = productionPlan().filter(p => p.need > 0);
-  if (!plan.length) { toast('No hace falta producir nada: el stock y lo programado cubren todo.'); return; }
-  const ins = {}; for (const p of plan) for (const k in p.sku.recipe) ins[k] = (ins[k] || 0) + p.sku.recipe[k] * p.need;
-  const lacks = Object.keys(ins).filter(k => ins[k] > insById(k).stock);
-  const txt = `PRODUCCIÓN · ${fmtLong(TODAY())}\n` + plan.map(p => `· ${p.need} × ${p.sku.name} (${p.forOrders} pedidos + ${p.forStock} stock)`).join('\n') + '\n\nInsumos:\n' + Object.keys(ins).map(k => `· ${insById(k).name}: ${fmtN(ins[k])} ${insById(k).unit}`).join('\n');
-  M.ctx = { prodTxt: txt };
-  openModal(mHead('Lista de producción', `La preparé con los pedidos confirmados, lo que ya está en marcha y tu stock mínimo.`) + `<div class="m-body">
-    <div class="rows">${plan.map(p => `<div class="row"><span>${jar(p.sku.flavor, 34)}</span><div class="row-main"><div class="row-title">${esc(p.sku.name)}</div><div class="row-sub">${p.forOrders} para pedidos · ${p.forStock} para stock · vence a los ${p.sku.shelf} días</div></div><div class="need num" style="font-size:26px">${p.need}</div></div>`).join('')}</div>
-    <div><div class="flabel" style="margin-bottom:6px">Insumos que se van a usar</div><div class="total-box" style="gap:4px">${Object.keys(ins).map(k => { const i = insById(k), bad = ins[k] > i.stock; return `<div><span>${bad ? ic('alert', 'sm') + ' ' : ''}${esc(i.name)}</span><span class="num" style="color:var(--${bad ? 'bad' : 'ink-2'})">${fmtN(ins[k])} de ${fmtN(i.stock)} ${i.unit}</span></div>`; }).join('')}</div></div>
+/* ---------- Lista de producción (pedidos / reposición) ---------- */
+function prodNeeds(mode) { return productionPlan().map(p => ({ p, q: mode === 'stock' ? p.forStock : mode === 'pedidos' ? p.forOrders : p.need })).filter(x => x.q > 0); }
+function insFor(list) { const ins = {}; for (const { p, q } of list) for (const k in p.sku.recipe) ins[k] = (ins[k] || 0) + p.sku.recipe[k] * q; return ins; }
+function insTable(ins) {
+  return `<div class="total-box" style="gap:4px">${Object.keys(ins).map(k => { const i = insById(k), bad = ins[k] > i.stock + 1e-9; return `<div><span>${bad ? ic('alert', 'sm') + ' ' : ''}${esc(i.name)}</span><span class="num" style="color:var(--${bad ? 'bad' : 'ink-2'})">${fmtN(ins[k])} ${i.unit} <span class="faint">(hay ${fmtN(i.stock)})</span></span></div>`; }).join('') || '<div class="faint">Sin insumos para calcular.</div>'}</div>`;
+}
+function openProdList(mode) {
+  mode = mode || 'pedidos';
+  const list = prodNeeds(mode);
+  if (!list.length) { toast(mode === 'stock' ? 'El stock está por encima del mínimo.' : 'No hace falta producir nada para los pedidos.'); return; }
+  const ins = insFor(list), lacks = Object.keys(ins).filter(k => ins[k] > insById(k).stock + 1e-9);
+  const txt = `PRODUCCIÓN · ${fmtLong(TODAY())}\n` + list.map(({ p, q }) => `· ${q} × ${p.sku.name}`).join('\n') + '\n\nInsumos:\n' + Object.keys(ins).map(k => `· ${insById(k).name}: ${fmtN(ins[k])} ${insById(k).unit}`).join('\n');
+  openModal(mHead(mode === 'stock' ? 'Reposición de stock' : 'Organizar producción', mode === 'stock' ? 'Producción extra para llegar a tu stock mínimo.' : 'Lo necesario para cumplir los pedidos confirmados.') + `<div class="m-body">
+    <div class="rows">${list.map(({ p, q }) => `<div class="row"><span>${jar(p.sku.flavor, 34)}</span><div class="row-main"><div class="row-title">${esc(p.sku.name)}</div><div class="row-sub">Vence a los ${p.sku.shelf} días de elaborado</div></div><div class="need num" style="font-size:26px">${q}</div></div>`).join('')}</div>
+    <div><div class="flabel" style="margin-bottom:6px">Ingredientes y envases que se van a usar</div>${insTable(ins)}</div>
     ${lacks.length ? `<div class="incident">${ic('alert', 'sm')}<span>No alcanza ${esc(joinList(lacks.map(k => insById(k).name.toLowerCase())))}. Podés crear las órdenes igual, pero para finalizarlas vas a tener que registrar la compra.</span></div>` : ''}
-    <p class="hint" style="margin:0">Al confirmar, creo ${plan.length} ${pl(plan.length, 'orden programada', 'órdenes programadas')} para hoy. No se descuentan insumos hasta que las finalices.</p>
-  </div><div class="m-foot"><button type="button" class="btn ghost grow" data-act="gri-copyprod">${ic('copy', 'sm')}Copiar lista</button><button type="button" class="btn ghost" data-act="close">Cancelar</button><button type="submit" class="btn primary">Crear ${plan.length} ${pl(plan.length, 'orden', 'órdenes')}</button></div>`, {
+    <p class="hint" style="margin:0">Al confirmar, creo ${list.length} ${pl(list.length, 'orden programada', 'órdenes programadas')} para hoy. Los insumos se descuentan recién cuando las finalices.</p>
+  </div><div class="m-foot"><button type="button" class="btn ghost grow" data-act="gri-copyprod">${ic('copy', 'sm')}Copiar lista</button><button type="button" class="btn ghost" data-act="close">Cancelar</button><button type="submit" class="btn primary">Crear ${list.length} ${pl(list.length, 'orden', 'órdenes')}</button></div>`, {
     ctx: { prodTxt: txt },
-    submit: () => done(run(() => { const p2 = productionPlan().filter(p => p.need > 0); for (const p of p2) A.createPO(p.sku.id, p.need, TODAY(), 'Desde la lista de Gri'); return `Listo, ${S.config.user}: creé ${p2.length} ${pl(p2.length, 'orden', 'órdenes')} de producción para hoy.`; }))
+    submit: () => done(run(() => { const l2 = prodNeeds(mode); for (const { p, q } of l2) A.createPO(p.sku.id, q, TODAY(), mode === 'stock' ? 'Reposición de stock' : 'Para pedidos confirmados'); return `Listo: creé ${l2.length} ${pl(l2.length, 'orden', 'órdenes')} de producción para hoy.`; }))
   });
+}
+function openIngredients(withStock) {
+  const list = prodNeeds(withStock ? 'todo' : 'pedidos');
+  const ins = insFor(list);
+  openModal(mHead('Ingredientes necesarios', 'Calculado con las recetas configuradas de cada producto.') + `<div class="m-body">
+    <div class="seg">${[['0', 'Solo pedidos'], ['1', 'Pedidos + reposición']].map(([v, l]) => `<button type="button" class="${(withStock ? '1' : '0') === v ? 'on' : ''}" data-act="gri-ingredients" data-arg="${v}">${l}</button>`).join('')}</div>
+    ${list.length ? `<div class="hint">Para: ${esc(joinList(list.map(({ p, q }) => q + ' × ' + skuShort(p.sku))))}</div>${insTable(ins)}` : emptyBox('No hay nada para producir en esta opción.')}
+    <p class="hint" style="margin:0">Si algo no alcanza aparece en rojo. Las cantidades salen de la receta de cada producto (Producción → Recetas y costos).</p>
+  </div><div class="m-foot"><button type="button" class="btn primary" data-act="close">Listo</button></div>`);
+}
+function openBuySuggest(id) {
+  const i = insById(id), plan = productionPlan();
+  let need = 0;
+  for (const p of plan) need += (p.sku.recipe[id] || 0) * p.need;
+  for (const p of S.prodOrders.filter(p => p.status === 'programada' || p.status === 'en_curso')) need += (skuById(p.skuId).recipe[id] || 0) * p.qty;
+  const sugg = Math.max(0, +(need + i.min - i.stock).toFixed(2));
+  openModal(mHead(`¿Cuánto comprar de ${esc(i.name.toLowerCase())}?`, 'Te lo calculé con la producción pendiente y tu mínimo.') + `<div class="m-body">
+    <div class="total-box"><div><span>Hay ahora</span><b class="num">${fmtN(i.stock)} ${i.unit}</b></div><div><span>Necesitás para producir lo pendiente</span><b class="num">${fmtN(need)} ${i.unit}</b></div><div><span>Stock mínimo configurado</span><b class="num">${fmtN(i.min)} ${i.unit}</b></div><div class="big"><span>Te sugiero comprar</span><span class="num">${fmtN(sugg)} ${i.unit}</span></div></div>
+    <p class="hint" style="margin:0">Cálculo: lo necesario + el mínimo − lo que hay. Al precio actual (${money(i.cost)} por ${i.unit}) serían unos ${money(sugg * i.cost)}.</p>
+  </div><div class="m-foot"><button type="button" class="btn ghost" data-act="close">Ahora no</button><button type="button" class="btn primary" data-act="gri-buy-go" data-arg="${i.id}" data-qty="${sugg}">Registrar compra</button></div>`);
 }
 
 const GRI_ACT = {
@@ -425,14 +414,16 @@ const GRI_ACT = {
   'gri-close': () => { U.gri.open = false; griRenderPanel(); },
   'gri-clear': () => { U.gri.msgs = []; griRenderPanel(); },
   'gri-ask': a => griAsk(a),
-  'gri-more': () => { U.gri.more = !U.gri.more; render(); },
   'gri-more-main': () => { U.gri.allMain = !U.gri.allMain; render(); },
-  'gri-prodlist': () => { closeModal(); openProdList(); },
+  'gri-prodlist': a => { closeModal(); openProdList(a || 'pedidos'); },
+  'gri-ingredients': a => { closeModal(); openIngredients(a === '1'); },
+  'gri-buy': a => { closeModal(); openBuySuggest(a); },
+  'gri-buy-go': (a, el) => { closeModal(); openInsBuy(a); setTimeout(() => { const q = $('#ib-qty'); if (q && +el.dataset.qty > 0) q.value = el.dataset.qty; }, 30); },
   'gri-copyprod': () => copyText(M.ctx.prodTxt, 'Lista de producción copiada'),
   'gri-route': () => { U.env.date = 'hoy'; ACT['copy-route'](); },
   'gri-tomorrow': () => { U.ped.date = 'manana'; U.ped.state = 'todos'; closeModal(); go('pedidos'); },
   'gri-ins': () => { U.inv.tab = 'insumos'; closeModal(); go('inventario'); render(); },
-  'gri-recetas': () => { U.prod.tab = 'recetas'; go('produccion'); render(); },
+  'gri-recetas': () => { U.prod.tab = 'recetas'; closeModal(); go('produccion'); render(); },
   'gri-writeoff': () => {
     const lots = S.lots.filter(l => l.qty > 0 && l.expires < TODAY());
     if (!lots.length) { toast('No hay unidades vencidas.'); return; }

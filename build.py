@@ -2,7 +2,7 @@ import pathlib
 s=pathlib.Path('src')
 html=(s/'shell.html').read_text()
 css=(s/'style.css').read_text()
-js='\n'.join((s/f).read_text() for f in ['core.js','ui.js','gri.js','tour.js','app.js'])
+js='\n'.join((s/f).read_text() for f in ['core.js','ui.js','ui2.js','gri.js','onboard.js','tour.js','app.js'])
 js=js.replace('__LOGO__',(s/'logo.b64').read_text().strip())
 out=html.replace('/*CSS*/',css).replace('/*JS*/',js)
 pathlib.Path('dist').mkdir(exist_ok=True)

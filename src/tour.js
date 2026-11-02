@@ -4,19 +4,19 @@
    Cada paso indica la sección, qué resaltar y qué preparar antes (pestañas).
    ===================================================================== */
 const TOUR = [
-  { view: 'inicio', sel: '.gri-welcome', title: 'Gri, tu asistente', text: 'Cada mañana Gri te cuenta cómo viene el día y qué conviene resolver primero. Todo sale de los datos del sistema, nada inventado.' },
-  { view: 'inicio', sel: '.card:has(.recs)', title: 'Lo importante, primero', text: 'Los pendientes vienen ordenados: urgente, para hoy y oportunidades. Cada uno trae un botón que lo resuelve, como copiar los datos del Uber o armar la lista de producción.' },
+  { view: 'inicio', sel: '.gri-hello', title: 'Gri, tu asistente', text: 'Cada mañana Gri te cuenta cómo viene el día y qué conviene resolver primero. Todo sale de los datos del sistema, nada inventado.' },
+  { view: 'inicio', sel: '.att-card', title: 'Lo importante, primero', text: 'Hasta tres prioridades por vez: urgente, hoy, esta semana. Cada una dice qué hacer, por qué y trae el botón que lo resuelve.' },
   { view: 'pedidos', sel: '.kanban', pre: () => { U.ped.state = 'todos'; U.ped.date = 'hoy'; }, title: 'Tus pedidos en un tablero', text: 'Por elaborar, en producción, listo y entregado. Arrastrás la tarjeta y cambia de estado. El stock se reserva solo, del lote que vence primero.' },
   { view: 'pedidos', sel: '.page-head .btn.primary', title: 'Un pedido en segundos', text: 'Elegís cliente, sabor, tamaño y toppings. El total y la ganancia se calculan solos. <b>Probá:</b> cargá uno y mirá cómo aparece en el tablero.' },
-  { view: 'produccion', sel: '.card:has(.plan)', pre: () => { U.prod.tab = 'hoy'; }, title: 'Qué producir hoy', text: 'Suma los pedidos confirmados, descuenta lo que ya tenés y lo que está en marcha, y agrega lo que falta para tu stock mínimo. Sin cuentas a mano.' },
+  { view: 'produccion', sel: '.need-card', pre: () => { U.prod.tab = 'hoy'; }, title: 'Qué producir hoy', text: 'A la izquierda, lo necesario para cumplir los pedidos. A la derecha, la reposición opcional para tu stock mínimo. Con un toque ves los ingredientes que vas a usar.' },
   { view: 'produccion', sel: '.card:has(#sim-milk)', pre: () => { U.prod.tab = 'recetas'; }, title: 'Cuánto te deja cada frasco', text: 'Ingredientes, envase, etiqueta y elaboración por receta. Mové el precio de la leche y mirá cómo cambia el margen de cada producto.' },
-  { view: 'envios', sel: '.ship', pre: () => { U.env.date = 'hoy'; }, title: 'Cada Uber bajo control', text: 'Producto, viaje y cobro por separado. Copiás los datos, pedís el Uber y registrás conductor, retiro y entrega. Pedir un Uber nunca marca un pedido como entregado.' },
-  { view: 'inventario', sel: '.card:has(.lot-table)', pre: () => { U.inv.tab = 'productos'; }, title: 'Stock por lote', text: 'Cada producción genera un lote con su vencimiento. Ves lo físico, lo reservado y lo disponible. Lo vencido no se entrega nunca.' },
+  { view: 'envios', sel: '.ship2', pre: () => { U.env.date = 'hoy'; }, title: 'Cada Uber bajo control', text: 'Cada entrega muestra tres estados separados: producto, viaje y cobro. Copiás dirección o datos para Uber y registrás conductor, retiro y entrega.' },
+  { view: 'inventario', sel: '.inv-list', pre: () => { U.inv.tab = 'productos'; }, title: 'Tu stock, claro', text: 'Primero un resumen por producto: existencia, reservado para pedidos y disponible para vender. Tocá un producto para ver sus lotes y vencimientos.' },
   { view: 'ventas', sel: '.g-kpi', title: 'Ventas y ganancia', text: 'Por día, semana o mes, comparado con el período anterior. Podés contar por fecha de pedido, de entrega o de cobro.' },
   { view: 'cobrar', sel: '.g-kpi', title: 'Quién te debe', text: 'Lo atrasado, las señas y lo que cobrás en la entrega. Un pedido puede estar pagado y sin entregar, o entregado y sin cobrar.' },
   { view: 'clientes', sel: '.card:has(.cl-av)', pre: () => { U.cli.tag = 'todos'; U.cli.q = ''; }, title: 'Tus clientes', text: 'Cada cuánto compran, qué les gusta y cuánto gastaron. Te avisa quién está por reponer y te arma el mensaje para WhatsApp.' },
   { view: 'estrategia', sel: '.grid.g2', title: 'Ideas para crecer', text: 'Datos calculados con tus números y, aparte, ideas para probar. Nunca muestra ganancias inventadas como si fueran seguras.' },
-  { view: 'inicio', sel: '#gri-fab', title: 'Preguntale a Gri', text: '¿Cuánto vendí hoy? ¿Qué tengo que producir mañana? Preguntale lo que quieras del negocio y te responde con los datos del sistema.' },
+  { view: 'inicio', sel: '[data-tour=gri]', title: 'Preguntale a Gri', text: '¿Cuánto vendí hoy? ¿Qué tengo que producir mañana? Preguntale lo que quieras del negocio y te responde con los datos del sistema.' },
 ];
 const T = { i: -1 };
 const tourSeen = () => { try { return localStorage.getItem('lg-tour-seen') === '1'; } catch (e) { return true; } };
@@ -60,11 +60,11 @@ function tourEnd(final) {
 }
 function tourPlace() {
   if (T.i < 0) return;
-  const st = TOUR[T.i], root = $('#tour'), el = document.querySelector(st.sel);
+  const st = TOUR[T.i], root = $('#tour'), el = tourEl(st.sel);
   root.hidden = false;
   const mobile = innerWidth <= 760;
   let atTop = false;
-  if (el && el.id !== 'gri-fab') {
+  if (el && !el.matches('[data-tour=gri]')) {
     const tall = el.getBoundingClientRect().height > innerHeight * .7;
     el.scrollIntoView({ block: mobile || tall ? 'start' : 'center', behavior: 'instant' });
     if (mobile || tall) scrollBy(0, mobile ? -72 : -24);
@@ -99,8 +99,9 @@ function tourPosition(el) {
   pop.style.left = clamp(x, 12, vw - pw - 12) + 'px';
   pop.style.top = clamp(y, 12, vh - ph - 12) + 'px';
 }
-addEventListener('resize', () => { if (T.i >= 0) tourPosition(document.querySelector(TOUR[T.i].sel)); });
-addEventListener('scroll', () => { if (T.i >= 0) tourPosition(document.querySelector(TOUR[T.i].sel)); }, { passive: true });
+const tourEl = sel => [...document.querySelectorAll(sel)].find(e => e.getClientRects().length && e.getBoundingClientRect().width > 0) || null;
+addEventListener('resize', () => { if (T.i >= 0) tourPosition(tourEl(TOUR[T.i].sel)); });
+addEventListener('scroll', () => { if (T.i >= 0) tourPosition(tourEl(TOUR[T.i].sel)); }, { passive: true });
 addEventListener('keydown', e => {
   if (T.i < 0) return;
   if (e.key === 'Escape') { e.stopPropagation(); tourEnd(false); }

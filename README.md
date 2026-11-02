@@ -26,3 +26,7 @@ en cada tabla. Las funciones de `A.*` en core.js son las que pasarían a ser lla
 - src/gri.js: recomendaciones priorizadas (griRecs), resumen de bienvenida (griSummary) y chat (GRI_ENGINE).
 - Hoy responde con reglas sobre los datos de la demo; no usa IA.
 - Para sumar IA: reemplazar GRI_ENGINE.ask por una llamada a un backend propio que reciba la pregunta y griContext().
+
+## v2
+- src/ui2.js: Envíos, Producción, Inventario, Cobrar, Clientes y Estrategia rediseñados (Pedidos sin cambios).
+- src/onboard.js: Primeros pasos e importación de Excel/CSV (clientes, productos y precios, stock inicial) con vista previa.
