@@ -974,6 +974,19 @@ h1,h2,h3{font-family:var(--f-display)}
 .nc-head h2{font-size:21px}
 @media (max-width:760px){.nc-head h2,.pb-head h2,.onb-txt h3,.how-item b{font-size:18px}.nc-head{padding:16px}.nc-ico{width:40px;height:40px}.s-name h3{font-size:19px}}
 
+/* ---------- Pipeline de Pedidos: cada columna con el color de su estado ---------- */
+.col[data-drop]{border-top:4px solid var(--cc);background:var(--cbg);border-color:transparent;border-top-color:var(--cc)}
+.col[data-drop="por_elaborar"]{--cc:var(--terra);--cbg:var(--t-orange)}
+.col[data-drop="en_produccion"]{--cc:var(--warn);--cbg:var(--t-amber)}
+.col[data-drop="listo"]{--cc:var(--info);--cbg:var(--t-blue)}
+.col[data-drop="entregado"]{--cc:var(--good);--cbg:var(--t-green)}
+.col[data-drop] .col-head b{color:var(--cc)}
+.col[data-drop] .col-head .count{background:var(--cc);color:#fff}
+.col[data-drop] .col-sum{background:var(--surface)}
+.col[data-drop] .empty{border-color:var(--cc);color:var(--ink-2);background:var(--surface)}
+.col[data-drop].drop-on{outline:2px dashed var(--cc);outline-offset:3px;background:var(--cbg)}
+:root.dark .col[data-drop] .col-head .count{color:var(--bg)}
+
 </style>
 </head>
 <body>
