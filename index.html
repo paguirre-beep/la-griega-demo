@@ -870,6 +870,56 @@ textarea.input{height:auto;min-height:72px;padding:10px 12px;resize:vertical}
 .s-sec .btn{padding:0 8px;font-size:12px}
 .s-sec .btn.ghost{border-color:var(--line-2)}
 
+/* ---------- Inicio definitivo ---------- */
+.home{gap:22px}
+.home .gri-hello{padding:22px 28px;gap:28px;background:linear-gradient(100deg,var(--surface) 50%,var(--t-orange) 135%)}
+.home .gh-mascot{padding-right:28px}
+.home .gri-hello .gw-title{font-size:40px}
+.home .gw-text{font-size:16px;color:var(--ink-2)}
+.home .gw-acts{margin-top:6px}
+.home-kpis{grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}
+.home-kpis .kpi{padding:18px 20px;gap:8px}
+.home-kpis .k-val{font-size:36px;font-weight:900}
+.home-kpis .bg-orange .k-val{color:var(--t-orange-i)}
+.home-kpis .bg-sage .k-val{color:var(--t-sage-i)}
+.home-kpis .bg-blue .k-val{color:var(--t-blue-i)}
+.home-kpis .kpi:not([class*="bg-"]) .k-ico{background:var(--t-orange);color:var(--t-orange-i)}
+.home-cols{gap:18px;align-items:stretch}
+.home-cols .card{padding:22px 24px}
+.home .sec-title h2{font-size:24px;font-weight:800}
+.home .att{grid-template-columns:40px minmax(0,1fr) auto auto;padding:14px 0}
+.home .att-ico{width:40px;height:40px}
+.home .att-main b{font-size:16px}
+.home .att-main span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13.5px}
+.home .att .btn{min-width:150px}
+.home .att .btn:not(.primary){border-color:var(--line-2)}
+.att-list.all .att{grid-template-columns:36px minmax(0,1fr) auto}
+.home .ship-row{grid-template-columns:auto minmax(0,1fr) 16px;padding:14px 0}
+.home .sr-time{padding:8px 12px;font-size:15px}
+.home .sr-main b{font-size:16px}
+.home .sr-main small{font-size:13px}
+@media (max-width:1280px){.home .att .btn{min-width:0}}
+@media (max-width:1100px){.home-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:760px){
+  .home{gap:16px}
+  .home .gri-hello{padding:18px;gap:10px}
+  .home .gh-mascot{padding-right:0}.home .gh-mascot svg{width:68px;height:68px}
+  .home .gri-hello .gw-title{font-size:28px}
+  .home .gw-text{font-size:15px}
+  .home-kpis{gap:12px}
+  .home-kpis .kpi{padding:14px}
+  .home-kpis .k-val{font-size:26px}
+  .home-kpis .k-label{font-size:12.5px}
+  .home-cols .card{padding:18px}
+  .home .sec-title h2{font-size:21px}
+  .home .att,.att-list.all .att{grid-template-columns:40px minmax(0,1fr);row-gap:8px}
+  .home .att > span:empty{display:none}
+  .home .att .lvl,.home .att .btn,.att-list.all .att .chips{grid-column:2;justify-self:start}
+  .home .att-main span{white-space:normal}
+  .home .gw-acts .btn{flex:1 1 auto}
+}
+@media (max-width:359px){.home-kpis{grid-template-columns:minmax(0,1fr)}}
+
 </style>
 </head>
 <body>
@@ -2557,10 +2607,10 @@ function griRecs() {
   const forOrders = sum(plan, p => p.forOrders), forStock = sum(plan, p => p.forStock);
   if (Object.keys(uncovered).length) {
     const first = shortToday.slice().sort((a, b) => a.slot.localeCompare(b.slot))[0];
-    add({ id: 'short-today', level: 'urgente', score: 90, icon: 'pot', title: 'Producir lo que falta para hoy', reason: `Faltan ${joinList(skuList(uncovered))} para pedidos que salen desde las ${slotStart(first.slot)}. Te puedo organizar la producción.`, todo: 'producir lo que falta para las entregas de hoy',
+    add({ id: 'short-today', level: 'urgente', score: 90, icon: 'pot', title: 'Producir lo que falta para hoy', brief: `Faltan unidades para entregas desde las ${slotStart(first.slot)}.`, reason: `Faltan ${joinList(skuList(uncovered))} para pedidos que salen desde las ${slotStart(first.slot)}. Te puedo organizar la producción.`, todo: 'producir lo que falta para las entregas de hoy',
       actions: [{ label: 'Organizar producción', act: 'gri-prodlist', arg: 'pedidos', primary: true }] });
   } else if (forOrders) {
-    add({ id: 'prod', level: 'hoy', score: 80, icon: 'pot', title: 'Completar la producción pendiente', reason: `Tenemos que preparar ${forOrders} ${pl(forOrders, 'unidad', 'unidades')} para cubrir los pedidos confirmados. Te puedo organizar la producción.`, todo: 'completar la producción pendiente',
+    add({ id: 'prod', level: 'hoy', score: 80, icon: 'pot', title: 'Completar la producción pendiente', brief: `Faltan ${forOrders} ${pl(forOrders, 'unidad', 'unidades')} para los pedidos confirmados.`, reason: `Tenemos que preparar ${forOrders} ${pl(forOrders, 'unidad', 'unidades')} para cubrir los pedidos confirmados. Te puedo organizar la producción.`, todo: 'completar la producción pendiente',
       actions: [{ label: 'Organizar producción', act: 'gri-prodlist', arg: 'pedidos', primary: true }] });
   }
   if (!forOrders && forStock) add({ id: 'restock', level: 'semana', score: 48, icon: 'boxes', title: 'Reponer stock mínimo', reason: `Los pedidos están cubiertos. Con ${forStock} ${pl(forStock, 'unidad', 'unidades')} más llegás a tu stock mínimo.`, todo: '',
@@ -2588,10 +2638,10 @@ function griRecs() {
   for (const p of plan) for (const k in p.sku.recipe) needIns[k] = (needIns[k] || 0) + p.sku.recipe[k] * p.need;
   for (const p of S.prodOrders.filter(p => p.status === 'programada' || p.status === 'en_curso')) { const s = skuById(p.skuId); for (const k in s.recipe) needIns[k] = (needIns[k] || 0) + s.recipe[k] * p.qty; }
   const blocking = S.insumos.filter(i => (needIns[i.id] || 0) > i.stock + 1e-9);
-  for (const i of blocking) add({ id: 'ins-block-' + i.id, level: 'urgente', score: 88, icon: 'bag', title: `Comprar ${i.name.toLowerCase()}`, reason: `Para la producción pendiente necesitamos ${fmtN(needIns[i.id])} ${i.unit} y hay ${fmtN(i.stock)} ${i.unit}.`, todo: `comprar ${i.name.toLowerCase()}`,
+  for (const i of blocking) add({ id: 'ins-block-' + i.id, level: 'urgente', score: 88, icon: 'bag', title: `Comprar ${i.name.toLowerCase()}`, brief: 'No alcanza para la producción pendiente.', reason: `Para la producción pendiente necesitamos ${fmtN(needIns[i.id])} ${i.unit} y hay ${fmtN(i.stock)} ${i.unit}.`, todo: `comprar ${i.name.toLowerCase()}`,
     actions: [{ label: 'Ver cuánto comprar', act: 'gri-buy', arg: i.id, primary: true }] });
   const low = S.insumos.filter(i => i.stock < i.min && !blocking.includes(i));
-  if (low.length === 1) { const i = low[0]; add({ id: 'ins-' + i.id, level: 'hoy', score: 60, icon: 'bag', title: `Revisar el stock de ${i.name.toLowerCase()}`, reason: `Nos estamos quedando sin ${i.name.toLowerCase()}: hay ${fmtN(i.stock)} ${i.unit} y el mínimo es ${fmtN(i.min)} ${i.unit}. ¿Revisamos cuánto comprar?`, todo: `revisar el stock de ${i.name.toLowerCase()}`,
+  if (low.length === 1) { const i = low[0]; add({ id: 'ins-' + i.id, level: 'hoy', score: 60, icon: 'bag', title: `Revisar el stock de ${i.name.toLowerCase()}`, brief: `Quedan ${fmtN(i.stock)} ${i.unit}, por debajo del mínimo de ${fmtN(i.min)} ${i.unit}.`, reason: `Nos estamos quedando sin ${i.name.toLowerCase()}: hay ${fmtN(i.stock)} ${i.unit} y el mínimo es ${fmtN(i.min)} ${i.unit}. ¿Revisamos cuánto comprar?`, todo: `revisar el stock de ${i.name.toLowerCase()}`,
     actions: [{ label: 'Ver cuánto comprar', act: 'gri-buy', arg: i.id, primary: true }] }); }
   else if (low.length > 1) add({ id: 'ins-many', level: 'hoy', score: 60, icon: 'bag', title: `Revisar ${low.length} insumos`, reason: `Están por debajo del mínimo: ${joinList(low.map(i => i.name.toLowerCase()))}.`, todo: 'revisar insumos que se están acabando',
     actions: [{ label: 'Ver insumos', act: 'gri-ins', primary: true }] });
@@ -2601,7 +2651,7 @@ function griRecs() {
     actions: [{ label: 'Dar de baja', act: 'gri-writeoff', primary: true }] });
 
   const owedLate = S.orders.filter(o => balanceOf(o) > 0 && o.deliveryDate < D).sort((a, b) => balanceOf(b) - balanceOf(a));
-  if (owedLate.length) { const c = clientById(owedLate[0].clientId); add({ id: 'owed', level: 'hoy', score: 58, icon: 'wallet', title: `Cobrar ${money(sum(owedLate, balanceOf))} atrasados`, reason: `${fname(c)}${owedLate.length > 1 ? ` y ${owedLate.length - 1} ${pl(owedLate.length - 1, 'cliente más', 'clientes más')}` : ''} ${owedLate.length > 1 ? 'tienen' : 'tiene'} saldo de entregas anteriores.`, todo: 'ponernos al día con los cobros',
+  if (owedLate.length) { const c = clientById(owedLate[0].clientId); add({ id: 'owed', level: 'hoy', score: 58, icon: 'wallet', title: `Cobrar ${money(sum(owedLate, balanceOf))} atrasados`, brief: `${owedLate.length} ${pl(owedLate.length, 'pedido')} de días anteriores sin cobrar.`, reason: `${fname(c)}${owedLate.length > 1 ? ` y ${owedLate.length - 1} ${pl(owedLate.length - 1, 'cliente más', 'clientes más')}` : ''} ${owedLate.length > 1 ? 'tienen' : 'tiene'} saldo de entregas anteriores.`, todo: 'ponernos al día con los cobros',
     actions: [{ label: 'Ver cobros', act: 'go', arg: 'cobrar', primary: true }] }); }
 
   const soonLots = S.lots.filter(l => l.qty > 0 && lotState(l) === 'proximo');
@@ -2769,78 +2819,63 @@ const GRI_ENGINE = {
   },
 };
 
-/* ---------- Vista de Inicio ---------- */
-function attRow(r) {
+/* ---------- Inicio (versión definitiva: Gri, 4 indicadores, prioridades y envíos) ---------- */
+const briefOf = r => { if (r.brief) return r.brief; const m = r.reason.match(/^.*?[.?!](?=\s|$)/); return m ? m[0] : r.reason; };
+function attRow(r, i) {
   const L = LEVELS[r.level], a = r.actions[0];
-  return `<div class="att lv-${L.tone}"><span class="att-ico">${ic(r.icon)}</span><div class="att-main"><b>${esc(r.title)}</b><span>${esc(r.reason)}</span></div><span class="lvl lvl-${L.tone}">${L.label}</span><button class="btn sm ${a.primary ? 'primary' : ''}" data-act="${a.act}" ${a.arg ? `data-arg="${esc(a.arg)}"` : ''}>${esc(a.label)}</button></div>`;
+  return `<div class="att lv-${L.tone}"><span class="att-ico">${ic(r.icon)}</span><div class="att-main"><b>${esc(r.title)}</b><span title="${esc(r.reason)}">${esc(briefOf(r))}</span></div>${r.level === 'urgente' ? `<span class="lvl lvl-red">Urgente</span>` : '<span></span>'}<button class="btn sm ${i === 0 ? 'primary' : ''}" data-act="${a.act}" ${a.arg ? `data-arg="${esc(a.arg)}"` : ''}>${esc(a.label)}</button></div>`;
+}
+function griHello(recs) {
+  const top = recs.filter(r => r.level === 'urgente' || r.level === 'hoy');
+  if (!top.length) return 'Todo está al día. No hay nada urgente por resolver.';
+  const n = top.length;
+  return `${esc(S.config.user)}, tenés ${n === 1 ? 'una prioridad' : n + ' prioridades'} hoy. Empecemos por ${esc(top[0].todo || top[0].title.toLowerCase())}.`;
 }
 function vInicio() {
   const D = TODAY(), LW = addDays(D, -7), dname = DIAS[weekday(D)];
   const valid = S.orders.filter(o => !o.cancelled);
-  const created = d => valid.filter(o => o.createdAt === d);
-  const tod = created(D), lw = created(LW);
+  const tod = valid.filter(o => o.createdAt === D), lw = valid.filter(o => o.createdAt === LW);
   const sales = sum(tod, o => o.total), salesLW = sum(lw, o => o.total), profit = sum(tod, profitOf);
   const delivT = valid.filter(o => o.deliveryDate === D), delivLW = valid.filter(o => o.deliveryDate === LW);
-  const shipsT = delivT.filter(o => o.ship), shipsLeft = shipsT.filter(o => o.ship.status !== 'entregado');
-  const owedOrders = valid.filter(o => balanceOf(o) > 0), owed = sum(owedOrders, balanceOf);
-  const stocks = S.skus.map(s => skuStock(s.id));
-  const free = sum(stocks, s => s.free), reserved = sum(stocks, s => s.reserved), soon = sum(stocks, s => s.soon), expired = sum(stocks, s => s.expired);
+  const shipsT = delivT.filter(o => o.ship), shipsLeft = shipsT.filter(o => o.ship.status !== 'entregado'), shipsDone = shipsT.length - shipsLeft.length;
+  const cmp = (cur, prev) => prev ? delta(cur, prev, 'vs. ' + dname + ' pasado') : '<span>Sin datos para comparar</span>';
   const h = new Date().getHours();
   const greet = h < 13 ? '¡Buen día' : h < 20 ? '¡Buenas tardes' : '¡Buenas noches';
   const emoji = h < 13 ? '☀️' : h < 20 ? '🧡' : '🌙';
   const recs = griRecs();
-  const shown = U.gri.allMain ? recs : recs.slice(0, 3);
-  const firstAct = recs[0] && recs[0].actions[0];
-
-  const pos = S.prodOrders.filter(p => p.date === D && p.status !== 'cancelada');
-  const plan = productionPlan().filter(p => p.forOrders > 0);
-  const unplanned = plan.filter(p => !pos.some(x => x.skuId === p.sku.id && x.status !== 'finalizada'));
-  const prodRows = pos.map(p => {
-    const sku = skuById(p.skuId), fin = p.status === 'finalizada', cur = p.status === 'en_curso';
-    const pr = fin ? 1 : cur ? (p.stage + 1) / (STAGES.length + 1) : 0;
-    return `<div class="row"><span>${jar(sku.flavor, 34)}</span><div class="row-main"><div class="row-title">${esc(sku.name)}</div><div class="row-sub">${fin ? (p.realQty || p.qty) + ' unidades listas' : cur ? STAGES[p.stage] + ' · ' + p.qty + ' unidades' : 'Programada · ' + p.qty + ' unidades'}</div><div class="prog ${fin ? 'good' : cur ? 'terra' : ''}" style="margin-top:7px"><i style="width:${Math.round(pr * 100)}%"></i></div></div><div class="row-end">${fin ? '<span class="chip good">Lista</span>' : cur ? '<span class="chip warn">En curso</span>' : '<span class="chip">Programada</span>'}</div></div>`;
-  }).join('') + unplanned.map(p => `<div class="row"><span>${jar(p.sku.flavor, 34)}</span><div class="row-main"><div class="row-title">${esc(p.sku.name)}</div><div class="row-sub">Faltan ${p.forOrders} para pedidos</div><div class="prog" style="margin-top:7px"><i style="width:0"></i></div></div><div class="row-end"><button class="btn sm soft" data-act="po-new" data-arg="${p.sku.id}" data-qty="${p.forOrders}">Programar</button></div></div>`).join('');
-
-  const next = valid.filter(o => o.deliveryDate === D && o.status !== 'entregado' && o.ship).sort((a, b) => a.slot.localeCompare(b.slot));
-  const nextRows = next.slice(0, 5).map(o => `<button class="ship-row" data-act="order" data-arg="${o.id}"><span class="sr-time">${ic('truck', 'sm')}${slotStart(o.slot)}</span><span class="sr-main"><b>${esc(clientById(o.clientId).name)}</b><small>${esc(orderAddr(o).barrio)} · #${o.number}</small></span><span class="sr-pill">${shipPill(o)}</span>${ic('chev', 'sm sr-chev')}</button>`).join('');
-
-  const days = [];
-  for (let i = 6; i >= 0; i--) { const d = addDays(D, -i); const os = created(d); days.push({ label: DIAS_C[weekday(d)] + ' ' + new Date(toT(d)).getUTCDate(), v: sum(os, o => o.total), cls: i === 0 ? 'today' : '', tip: fmtLong(d) + ' · ' + money(sum(os, o => o.total)) + ' · ' + os.length + ' pedidos', arg: d }); }
-  const wk = sum(days, d => d.v), prevWk = sum(Array.from({ length: 7 }, (_, i) => sum(created(addDays(D, -7 - i)), o => o.total)));
-
-  return `<div class="wrap">
+  const first = recs.find(r => r.level === 'urgente' || r.level === 'hoy');
+  const fa = first && first.actions[0];
+  const next = shipsLeft.slice().sort((a, b) => a.slot.localeCompare(b.slot) || a.number - b.number).slice(0, 3);
+  return `<div class="wrap home">
   <section class="card gri-hello" aria-label="Resumen de Gri">
-    <div class="gh-mascot">${griMascot(104)}</div>
+    <div class="gh-mascot">${griMascot(96)}</div>
     <div class="gh-main"><div class="eyebrow">Gri · tu asistente · ${fmtLong(D)}</div>
       <h1 class="gw-title">${greet}, ${esc(S.config.user)}! ${emoji}</h1>
-      <p class="gw-text">${griSummary(recs)}</p>
-      <div class="chips gw-acts">${firstAct ? `<button class="btn primary" data-act="${firstAct.act}" ${firstAct.arg ? `data-arg="${esc(firstAct.arg)}"` : ''}>${esc(firstAct.label)}</button>` : ''}<button class="btn" data-act="gri-open">${ic('msg', 'sm')}Preguntale a Gri</button></div></div>
+      <p class="gw-text">${griHello(recs)}</p>
+      <div class="chips gw-acts">${fa ? `<button class="btn primary" data-act="${fa.act}" ${fa.arg ? `data-arg="${esc(fa.arg)}"` : ''}>${esc(fa.label)}</button>` : ''}<button class="btn" data-act="gri-open">${ic('msg', 'sm')}Preguntale a Gri</button></div></div>
   </section>
-  <div class="grid g-kpi">
-    ${kpi({ icon: 'chart', label: 'Vendiste hoy', value: money(sales), sub: delta(sales, salesLW, 'vs. ' + dname + ' pasado'), bg: 'orange', go: 'ventas', small: true, help: 'Suma de los pedidos que tomaste hoy, con descuentos aplicados.' })}
-    ${kpi({ icon: 'leaf', label: 'Ganancia bruta', value: money(profit), sub: 'margen ' + pctTxt(sales ? profit / sales : 0), bg: 'sage', go: 'ventas', small: true, help: 'Lo que queda después de restar ingredientes, envase, etiqueta y elaboración. No descuenta gastos fijos como alquiler o sueldos.' })}
-    ${kpi({ icon: 'orders', label: 'Pedidos de hoy', value: delivT.length, sub: delta(delivT.length, delivLW.length, 'vs. ' + dname + ' pasado'), go: 'pedidos' })}
-    ${kpi({ icon: 'truck', label: 'Envíos pendientes', value: shipsLeft.length, sub: (shipsT.length - shipsLeft.length) + ' ya entregados hoy', bg: 'blue', go: 'envios' })}
-    ${kpi({ icon: 'wallet', label: 'Cobros pendientes', value: money(owed), sub: owedOrders.length + ' pedidos con saldo', bg: 'amber', go: 'cobrar', small: true })}
-    ${kpi({ icon: 'boxes', label: 'Disponible para vender', value: free, sub: reserved + ' reservados para pedidos', bg: 'green', go: 'inventario', help: 'Unidades sin reservar y sin vencer: las podés ofrecer ya.' })}
-    ${kpi({ icon: 'clock', label: 'Próximos a vencer', value: soon, sub: soon ? 'vencen en 3 días o menos' : 'Nada por vencer', bg: 'amber', go: 'inventario' })}
-    ${kpi({ icon: 'x', label: 'Vencidos', value: expired, sub: expired ? 'para dar de baja' : 'Nada vencido', bg: expired ? 'red' : 'cream', go: 'inventario' })}
+  <div class="grid home-kpis">
+    ${kpi({ icon: 'chart', label: 'Vendiste hoy', value: money(sales), sub: cmp(sales, salesLW), bg: 'orange', go: 'ventas', help: 'Suma de los pedidos que tomaste hoy, con descuentos aplicados.' })}
+    ${kpi({ icon: 'leaf', label: 'Ganancia bruta', value: money(profit), sub: sales ? 'margen ' + pctTxt(profit / sales) : 'Sin ventas hoy', bg: 'sage', go: 'ventas', help: 'Lo que queda de las ventas de hoy después de restar ingredientes, envase, etiqueta y elaboración. No descuenta gastos fijos.' })}
+    ${kpi({ icon: 'orders', label: 'Pedidos de hoy', value: delivT.length, sub: cmp(delivT.length, delivLW.length), go: 'pedidos', help: 'Pedidos con entrega programada para hoy, sin importar cuándo se tomaron.' })}
+    ${kpi({ icon: 'truck', label: 'Envíos pendientes', value: shipsLeft.length, sub: shipsT.length ? shipsDone + (shipsDone === 1 ? ' ya entregado hoy' : ' ya entregados hoy') : 'Sin envíos hoy', bg: 'blue', go: 'envios' })}
   </div>
-  <div class="grid g-main">
+  <div class="grid g-main home-cols">
     <section class="card att-card">
-      <div class="sec-title"><h2>Lo que necesita tu atención</h2>${recs.length > 3 ? `<button class="link" data-act="gri-more-main">${U.gri.allMain ? 'Ver menos' : 'Ver todas (' + recs.length + ')'}</button>` : ''}</div>
-      <div class="att-list">${shown.map(attRow).join('') || `<div class="empty">Nada pendiente por ahora. Todo lo de hoy está encaminado.</div>`}</div>
+      <div class="sec-title"><h2>Lo que necesita tu atención</h2>${recs.length ? `<button class="link" data-act="gri-all">Ver todas (${recs.length})</button>` : ''}</div>
+      <div class="att-list">${recs.slice(0, 3).map(attRow).join('') || `<div class="empty">Todo al día. No hay tareas pendientes.</div>`}</div>
     </section>
     <section class="card env-card">
       <div class="sec-title"><h2>Próximos envíos</h2><a class="link" href="#envios">Hoja de entregas ${ic('chev', 'sm')}</a></div>
-      <div class="ship-rows">${nextRows || emptyBox('No quedan envíos para hoy.')}</div>
+      <div class="ship-rows">${next.map(o => `<button class="ship-row" data-act="order" data-arg="${o.id}"><span class="sr-time">${ic('truck', 'sm')}${slotStart(o.slot)}</span><span class="sr-main"><b>${esc(clientById(o.clientId).name)}</b><small>${esc(orderAddr(o).barrio || 'Sin zona')} · #${o.number}</small></span>${ic('chev', 'sm sr-chev')}</button>`).join('') || emptyBox('No quedan envíos para hoy.')}</div>
     </section>
   </div>
-  <div class="grid g2">
-    <section class="card"><div class="sec-title"><h2>Producción de hoy</h2><a class="link" href="#produccion">Ver producción ${ic('chev', 'sm')}</a></div><div class="rows">${prodRows || emptyBox('No hay producción para hoy.')}</div></section>
-    <section class="card"><div class="sec-title"><div><h2>Últimos 7 días</h2><div class="k-sub" style="margin-top:4px"><b class="num" style="color:var(--ink)">${money(wk)}</b> ${delta(wk, prevWk, 'vs. 7 días anteriores')}</div></div><a class="link" href="#ventas">Ventas ${ic('chev', 'sm')}</a></div>${barChart(days, { act: 'day-sales', label: 'Ventas de los últimos 7 días', w: 600, h: 250 })}</section>
-  </div>
   </div>`;
+}
+function openAllRecs() {
+  const recs = griRecs();
+  const groups = Object.keys(LEVELS).map(k => [k, recs.filter(r => r.level === k)]).filter(g => g[1].length);
+  openModal(mHead('Todo lo que Gri tiene para vos', 'Ordenado por importancia. Cada tarea trae el botón que la resuelve.') + `<div class="m-body">${groups.map(([k, list]) => `<div><div style="margin-bottom:4px"><span class="lvl lvl-${LEVELS[k].tone}">${LEVELS[k].label}</span></div><div class="att-list all">${list.map(r => { const L = LEVELS[r.level]; return `<div class="att lv-${L.tone}"><span class="att-ico">${ic(r.icon)}</span><div class="att-main"><b>${esc(r.title)}</b><span>${esc(r.reason)}</span></div><span class="chips">${r.actions.map(a => `<button type="button" class="btn sm ${a.primary ? 'primary' : ''}" data-act="${a.act}" ${a.arg ? `data-arg="${esc(a.arg)}"` : ''}>${esc(a.label)}</button>`).join('')}</span></div>`; }).join('')}</div></div>`).join('') || emptyBox('Todo al día.')}</div><div class="m-foot"><button type="button" class="btn primary" data-act="close">Listo</button></div>`, { wide: true });
 }
 
 /* ---------- Panel de chat ---------- */
@@ -2920,6 +2955,7 @@ const GRI_ACT = {
   'gri-clear': () => { U.gri.msgs = []; griRenderPanel(); },
   'gri-ask': a => griAsk(a),
   'gri-more-main': () => { U.gri.allMain = !U.gri.allMain; render(); },
+  'gri-all': () => { closeModal(); openAllRecs(); },
   'gri-prodlist': a => { closeModal(); openProdList(a || 'pedidos'); },
   'gri-ingredients': a => { closeModal(); openIngredients(a === '1'); },
   'gri-buy': a => { closeModal(); openBuySuggest(a); },

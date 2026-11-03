@@ -857,3 +857,53 @@ textarea.input{height:auto;min-height:72px;padding:10px 12px;resize:vertical}
 .s-sec{grid-template-columns:repeat(2,minmax(0,1fr))}
 .s-sec .btn{padding:0 8px;font-size:12px}
 .s-sec .btn.ghost{border-color:var(--line-2)}
+
+/* ---------- Inicio definitivo ---------- */
+.home{gap:22px}
+.home .gri-hello{padding:22px 28px;gap:28px;background:linear-gradient(100deg,var(--surface) 50%,var(--t-orange) 135%)}
+.home .gh-mascot{padding-right:28px}
+.home .gri-hello .gw-title{font-size:40px}
+.home .gw-text{font-size:16px;color:var(--ink-2)}
+.home .gw-acts{margin-top:6px}
+.home-kpis{grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}
+.home-kpis .kpi{padding:18px 20px;gap:8px}
+.home-kpis .k-val{font-size:36px;font-weight:900}
+.home-kpis .bg-orange .k-val{color:var(--t-orange-i)}
+.home-kpis .bg-sage .k-val{color:var(--t-sage-i)}
+.home-kpis .bg-blue .k-val{color:var(--t-blue-i)}
+.home-kpis .kpi:not([class*="bg-"]) .k-ico{background:var(--t-orange);color:var(--t-orange-i)}
+.home-cols{gap:18px;align-items:stretch}
+.home-cols .card{padding:22px 24px}
+.home .sec-title h2{font-size:24px;font-weight:800}
+.home .att{grid-template-columns:40px minmax(0,1fr) auto auto;padding:14px 0}
+.home .att-ico{width:40px;height:40px}
+.home .att-main b{font-size:16px}
+.home .att-main span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13.5px}
+.home .att .btn{min-width:150px}
+.home .att .btn:not(.primary){border-color:var(--line-2)}
+.att-list.all .att{grid-template-columns:36px minmax(0,1fr) auto}
+.home .ship-row{grid-template-columns:auto minmax(0,1fr) 16px;padding:14px 0}
+.home .sr-time{padding:8px 12px;font-size:15px}
+.home .sr-main b{font-size:16px}
+.home .sr-main small{font-size:13px}
+@media (max-width:1280px){.home .att .btn{min-width:0}}
+@media (max-width:1100px){.home-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:760px){
+  .home{gap:16px}
+  .home .gri-hello{padding:18px;gap:10px}
+  .home .gh-mascot{padding-right:0}.home .gh-mascot svg{width:68px;height:68px}
+  .home .gri-hello .gw-title{font-size:28px}
+  .home .gw-text{font-size:15px}
+  .home-kpis{gap:12px}
+  .home-kpis .kpi{padding:14px}
+  .home-kpis .k-val{font-size:26px}
+  .home-kpis .k-label{font-size:12.5px}
+  .home-cols .card{padding:18px}
+  .home .sec-title h2{font-size:21px}
+  .home .att,.att-list.all .att{grid-template-columns:40px minmax(0,1fr);row-gap:8px}
+  .home .att > span:empty{display:none}
+  .home .att .lvl,.home .att .btn,.att-list.all .att .chips{grid-column:2;justify-self:start}
+  .home .att-main span{white-space:normal}
+  .home .gw-acts .btn{flex:1 1 auto}
+}
+@media (max-width:359px){.home-kpis{grid-template-columns:minmax(0,1fr)}}
